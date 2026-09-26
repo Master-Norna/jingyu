@@ -1,5 +1,27 @@
 # 更新记录
 
+## 0.2.0（未发布）
+
+第二波：让模型改图更省力、看图更准。起因是第一次模型实测（清晨窗边静物）暴露的问题，
+按一般问题来解决。
+
+- 环境族：场景外面的光成为第三类生成器（`world.environment`）。`daylight` 用太阳高度、
+  方位、云量、雾霾和地面颜色描述从黎明到黄昏、从晴到阴的日光，自动保持太阳方向、天空、
+  阳光色温和阴影软硬一致；`uniform` 是均匀光。
+- 编组与放置关系：`groups` 与 `parent` 让一组东西一起动；`rest_on` 自动把物体落到支撑
+  面上（桌面、碗底），不用再手算高度。
+- 新几何算子 `wall`：可以开门洞和窗洞的墙。
+- 灯光：`temperature_k` 用色温代替颜色；面光加 `size_y`，可以做矩形软光。
+- 物理检查：`physics.intersection`（穿插）和 `physics.floating`（悬空）警告，带修改提示。
+- 画面检查：渲染后报告出画的物体（`frame.not_visible`）和曝光问题（`frame.underexposed`、
+  `frame.overexposed`），写进回执。
+- 新工具 `edit_scene`：用 JSON Patch 加 `merge` 改场景，`@<id>` 按 id 寻址，可以从某个
+  候选的场景出发（`from_candidate`）。新工具 `diff_candidates`：两个候选之间的场景变化和
+  画面布局变化。
+- `list_generators` 增加环境族；场景可写 `intent`（一句话意图）作为看图时的对照。
+- 看图指引重写：先写意图；先看图、用一句话说出画面，再用数字去找位置；每轮只改一个想法。
+- 示例场景 `morning-window.json`。
+
 ## 0.1.0（未发布）
 
 第一波：地基。
