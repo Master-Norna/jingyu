@@ -14,6 +14,7 @@ from typing import Any
 from ..errors import Issue, pointer_join
 from ..geometry.spatial import WorldMesh, drop_gap, overlaps, rest_shift
 from ..placement import Placement
+from .warnings import accepted_by_object
 
 #: Sinking deeper than this is reported.
 INTERSECTION_TOLERANCE = 0.001
@@ -29,6 +30,14 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
     ]
     meshes = {obj["id"]: placement.meshes[obj["id"]] for _, obj in visible}
     bounds = {obj_id: mesh.bounds() for obj_id, mesh in meshes.items()}
+    accepted = accepted_by_object(scene)
+    # Checks whose warnings would be dropped anyway are not worth computing: a meadow
+    # of grass accepted as sinking into the hillside costs seconds to measure.
+    settled = {
+        obj_id
+        for obj_id, codes in accepted.items()
+        if {"physics.intersection", "physics.floating"} <= codes
+    }
 
     issues: list[Issue] = []
     sunk: set[str] = set()
@@ -36,7 +45,7 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
         for b_index, b in visible[position + 1 :]:
             if not overlaps(bounds[a["id"]], bounds[b["id"]], INTERSECTION_TOLERANCE):
                 continue
-            if _attached(a, b):
+            if _attached(a, b) or {a["id"], b["id"]} <= settled:
                 continue
             forward = _sinking(meshes[a["id"]], meshes[b["id"]], bounds[b["id"]])
             backward = _sinking(meshes[b["id"]], meshes[a["id"]], bounds[a["id"]])
@@ -68,6 +77,8 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
         obj_id = obj["id"]
         # Attached things may hang; a reflector card or flag stands on a stand we do not model.
         if obj_id in sunk or obj.get("attached_to") or not obj.get("camera_visible", True):
+            continue
+        if "physics.floating" in accepted.get(obj_id, set()):
             continue
         box = bounds[obj_id]
         gap: float | None = None
@@ -119,10 +130,10 @@ def _sinking(
         return 0.0, 0
     low, high = b_bounds
     deepest, count = 0.0, 0
-    for vertex in a.vertices:
+    for vertex in a.probes:
         if not all(low[k] <= vertex[k] <= high[k] for k in range(3)):
             continue
-        depth = b.depth_inside(vertex)
+        depth = b.depth_inside(vertex, at_least=INTERSECTION_TOLERANCE)
         if depth > INTERSECTION_TOLERANCE:
             count += 1
             deepest = max(deepest, depth)

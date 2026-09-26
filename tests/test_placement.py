@@ -368,3 +368,32 @@ def test_fill_lights_have_their_own_defaults() -> None:
     assert (light["power_w"], light["size"]) == (100.0, 1.0)
     del scene["lights"][-1]["look_at"]
     assert not validate_scene(scene).valid  # a fill light must be aimed
+
+
+def test_dense_meshes_are_probed_by_their_lowest_points_and_a_spread() -> None:
+    from jingyu.geometry.spatial import MAX_PROBES
+
+    meadow = WorldMesh.from_mesh(
+        GEOMETRY.run({"op": "grass", "size": [2, 2], "density": 1500}), IDENTITY
+    )
+    assert len(meadow.vertices) > MAX_PROBES
+    probes = meadow.probes
+    assert len(probes) == MAX_PROBES
+    lowest = min(v[2] for v in meadow.vertices)
+    assert sum(1 for v in probes if v[2] == lowest) >= MAX_PROBES // 3
+    assert max(v[2] for v in probes) > 0.05  # blade tips are sampled too
+    small = _mesh(BOX)
+    assert small.probes is small.vertices
+
+
+def test_accepted_physics_warnings_are_not_computed() -> None:
+    scene = still_life()
+    orange = scene["objects"][3]
+    del orange["rest_on"]
+    del orange["parent"]
+    orange["location"] = [0.4, 0.3, 0.03]  # sunk into the table top
+    assert _warnings(scene) == [("physics.intersection", "/objects/3/location")]
+    for obj in scene["objects"][2:4]:
+        obj["accept_warnings"] = ["physics.intersection", "physics.floating"]
+    scene["objects"][1]["accept_warnings"] = ["physics.intersection", "physics.floating"]
+    assert _warnings(scene) == []

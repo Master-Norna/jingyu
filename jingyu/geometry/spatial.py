@@ -15,12 +15,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .mesh import MeshData, Portal
+from .noise import random
 from .transform import Mat4, Vec3, apply_all
 
 #: Queries are nudged by these offsets so a line through a shared edge or vertex
 #: is counted on exactly one side of it.
 _JITTER = (1.3e-7, 2.9e-7)
 _MAX_GRID = 256
+#: Meshes with more vertices than this are probed with a sample of them (the
+#: lowest third, which touch supports first, plus an even spread of the rest).
+MAX_PROBES = 6000
 
 #: For a line along axis ``a`` the grid uses the other two axes in cyclic order,
 #: so a triangle with positive projected area faces the +a direction.
@@ -116,6 +120,31 @@ class WorldMesh:
     _indices: dict[int, AxisIndex] = field(default_factory=dict, repr=False)
     _closed: bool | None = field(default=None, repr=False)
     _bounds: tuple[Vec3, Vec3] | None = field(default=None, repr=False)
+    _probes: list[Vec3] | None = field(default=None, repr=False)
+
+    @property
+    def probes(self) -> list[Vec3]:
+        """The vertices that stand for this mesh in contact and depth queries.
+
+        All of them for an ordinary object; for a dense one (a meadow of grass, a
+        scatter of pebbles) the lowest third plus an even spread of the rest, so a
+        placement check stays fast at a millimetre-scale cost in precision.
+        """
+
+        if self._probes is None:
+            vertices = self.vertices
+            if len(vertices) <= MAX_PROBES:
+                self._probes = vertices
+            else:
+                lowest = sorted(vertices, key=lambda v: v[2])[: MAX_PROBES // 3]
+                # Hashed, not strided: a stride can fall in step with a repeating
+                # layout (four vertices per grass blade) and never see the tips.
+                count = len(vertices)
+                spread = [
+                    vertices[int(random(k, 0, 29) * count)] for k in range(MAX_PROBES - len(lowest))
+                ]
+                self._probes = lowest + spread
+        return self._probes
 
     @classmethod
     def from_mesh(cls, mesh: MeshData, matrix: Mat4) -> WorldMesh:
@@ -154,16 +183,19 @@ class WorldMesh:
         return self._bounds
 
     def vertices_over(self, box: tuple[Vec3, Vec3]) -> list[Vec3]:
-        """Vertices whose x and y fall inside the footprint of *box*."""
+        """Probe vertices whose x and y fall inside the footprint of *box*."""
 
         (x0, y0, _), (x1, y1, _) = box
-        return [v for v in self.vertices if x0 <= v[0] <= x1 and y0 <= v[1] <= y1]
+        return [v for v in self.probes if x0 <= v[0] <= x1 and y0 <= v[1] <= y1]
 
-    def depth_inside(self, point: Sequence[float]) -> float:
+    def depth_inside(self, point: Sequence[float], at_least: float = 0.0) -> float:
         """How far *point* is inside this closed mesh along the nearest axis; 0 outside.
 
         Inside-ness is the parity of crossings above the point on a vertical line;
         depth is the shortest distance to a surface along the three axis lines.
+        A caller that only cares about depths beyond *at_least* gets the vertical
+        distance back as soon as it is no deeper than that: the horizontal lines
+        (slow through a terrain, which they cross many times) are then skipped.
         """
 
         if not self.closed:
@@ -172,11 +204,12 @@ class WorldMesh:
         vertical = self.index(2).hits(point)
         if sum(1 for hit in vertical if hit.at > z) % 2 == 0:
             return 0.0
-        depth = math.inf
-        for axis in range(3):
-            hits = vertical if axis == 2 else self.index(axis).hits(point)
+        depth = min((abs(hit.at - z) for hit in vertical), default=math.inf)
+        if depth <= at_least:
+            return depth
+        for axis in (0, 1):
             coordinate = float(point[axis])
-            for hit in hits:
+            for hit in self.index(axis).hits(point):
                 depth = min(depth, abs(hit.at - coordinate))
         return 0.0 if math.isinf(depth) else depth
 

@@ -43,6 +43,23 @@ def drop_accepted(issues: Iterable[Issue], scene: Mapping[str, Any]) -> list[Iss
     return [i for i in issues if not (i.severity == "warning" and _accepts(i, accepted, by_object))]
 
 
+def accepted_by_object(scene: Mapping[str, Any]) -> dict[str, set[str]]:
+    """Per object id, every warning code it accepts (its own, its groups', the scene's)."""
+
+    nodes = {
+        entry["id"]: entry
+        for collection in ("groups", "objects")
+        for entry in scene.get(collection, ())
+        if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
+    }
+    everywhere = set(scene.get("accept_warnings", ()))
+    return {
+        obj["id"]: everywhere | _object_accepts(obj, nodes)
+        for obj in scene.get("objects", ())
+        if isinstance(obj, Mapping) and isinstance(obj.get("id"), str)
+    }
+
+
 def _object_accepts(obj: Mapping[str, Any], nodes: Mapping[str, Mapping[str, Any]]) -> set[str]:
     """The object's own accepted codes plus those of every group it sits in."""
 
@@ -67,4 +84,4 @@ def _accepts(issue: Issue, accepted: set[str], by_object: dict[str, set[str]]) -
     return False
 
 
-__all__ = ["ACCEPTABLE_WARNINGS", "drop_accepted"]
+__all__ = ["ACCEPTABLE_WARNINGS", "accepted_by_object", "drop_accepted"]
