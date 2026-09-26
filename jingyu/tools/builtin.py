@@ -173,9 +173,10 @@ def _get_guide(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "jingyu_version": __version__,
             "summary": (
                 "Jingyu builds images from declarative 3D scenes rendered by Blender. "
-                "Geometry and materials come from parametric generators, every render "
-                "is an immutable candidate, and each pixel can be traced back to the "
-                "scene entry that produced it."
+                "Geometry, materials and the surrounding light (environments such as "
+                "daylight) come from parametric generators, objects are placed by "
+                "relations (groups, rest_on), every render is an immutable candidate, "
+                "and each pixel can be traced back to the scene entry that produced it."
             ),
             "workflow": GUIDE_WORKFLOW,
             "conventions": conventions.summary(),
