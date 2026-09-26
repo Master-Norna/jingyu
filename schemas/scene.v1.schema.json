@@ -24,15 +24,21 @@
       "maxLength": 200,
       "description": "Human title."
     },
+    "intent": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "One sentence: what the picture must make a viewer see or feel. Reviews judge the render against it; never affects rendering."
+    },
     "notes": {
       "type": "string",
       "maxLength": 8000,
-      "description": "Free-form intent and context; never affects rendering."
+      "description": "Free-form context; never affects rendering."
     },
     "world": {
       "type": "object",
       "additionalProperties": false,
       "default": {},
+      "description": "The light around the scene. Without environment it is a uniform color at strength; with one, the environment family decides and color and strength are ignored.",
       "properties": {
         "color": {
           "$ref": "#/$defs/color",
@@ -43,8 +49,19 @@
           "description": "Background light multiplier.",
           "default": 1.0,
           "minimum": 0.0
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
         }
       }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/group"
+      },
+      "maxItems": 4096,
+      "default": []
     },
     "materials": {
       "type": "array",
@@ -107,7 +124,8 @@
             "cylinder",
             "cone",
             "lathe",
-            "vessel"
+            "vessel",
+            "wall"
           ],
           "description": "Which geometry operator to use."
         }
@@ -504,6 +522,81 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "wall"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "wall",
+            "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors). Light passes through the openings.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "wall",
+                "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors). Light passes through the openings."
+              },
+              "size": {
+                "type": "array",
+                "description": "Width (x), thickness (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "openings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "x",
+                    "sill",
+                    "width",
+                    "height"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "description": "Centre of the opening along the wall (x), metres."
+                    },
+                    "sill": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Height of the opening's bottom edge above the wall base; 0 = door."
+                    },
+                    "width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Opening width."
+                    },
+                    "height": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Opening height."
+                    }
+                  }
+                },
+                "maxItems": 64,
+                "default": [],
+                "description": "Rectangular holes through the wall; x is measured from its centre."
+              }
+            }
+          }
         }
       ]
     },
@@ -828,6 +921,57 @@
         }
       ]
     },
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "description": "An invisible transform that objects, lights, cameras and other groups can belong to (parent); moving the group moves everything in it.",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "parent": {
+          "$ref": "#/$defs/id",
+          "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+        },
+        "location": {
+          "type": "array",
+          "description": "Position of the group's origin in metres.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "rotation": {
+          "type": "array",
+          "description": "XYZ Euler rotation in degrees.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "scale": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Uniform scale factor applied to everything in the group.",
+          "default": 1.0
+        }
+      }
+    },
     "object": {
       "type": "object",
       "additionalProperties": false,
@@ -845,6 +989,14 @@
         "material": {
           "$ref": "#/$defs/id",
           "description": "Id of an entry in materials; omitted means neutral grey."
+        },
+        "parent": {
+          "$ref": "#/$defs/id",
+          "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+        },
+        "rest_on": {
+          "$ref": "#/$defs/id",
+          "description": "Id of an object to rest on. The object keeps its x and y, and its height (location z) is computed so its lowest points touch the top surface of that object: a table top, the inside of a bowl."
         },
         "location": {
           "type": "array",
@@ -952,6 +1104,16 @@
                 "$ref": "#/$defs/color",
                 "default": "#ffffff"
               },
+              "temperature_k": {
+                "type": "number",
+                "minimum": 1667,
+                "maximum": 25000,
+                "description": "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, 7000 overcast); when given it replaces color."
+              },
+              "parent": {
+                "$ref": "#/$defs/id",
+                "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+              },
               "power_w": {
                 "type": "number",
                 "description": "Emitted power in watts.",
@@ -1005,6 +1167,16 @@
               "color": {
                 "$ref": "#/$defs/color",
                 "default": "#ffffff"
+              },
+              "temperature_k": {
+                "type": "number",
+                "minimum": 1667,
+                "maximum": 25000,
+                "description": "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, 7000 overcast); when given it replaces color."
+              },
+              "parent": {
+                "$ref": "#/$defs/id",
+                "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
               },
               "power_w": {
                 "type": "number",
@@ -1104,6 +1276,16 @@
                 "$ref": "#/$defs/color",
                 "default": "#ffffff"
               },
+              "temperature_k": {
+                "type": "number",
+                "minimum": 1667,
+                "maximum": 25000,
+                "description": "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, 7000 overcast); when given it replaces color."
+              },
+              "parent": {
+                "$ref": "#/$defs/id",
+                "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+              },
               "power_w": {
                 "type": "number",
                 "description": "Emitted power in watts.",
@@ -1112,9 +1294,14 @@
               },
               "size": {
                 "type": "number",
-                "description": "Edge length of the square emitter in metres.",
+                "description": "Width of the emitter in metres (and its depth unless size_y is given).",
                 "default": 1.0,
                 "exclusiveMinimum": 0.0
+              },
+              "size_y": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Depth of a rectangular emitter in metres, e.g. a window-shaped soft light; omitted means square."
               },
               "look_at": {
                 "type": "array",
@@ -1188,6 +1375,16 @@
                 "$ref": "#/$defs/color",
                 "default": "#ffffff"
               },
+              "temperature_k": {
+                "type": "number",
+                "minimum": 1667,
+                "maximum": 25000,
+                "description": "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, 7000 overcast); when given it replaces color."
+              },
+              "parent": {
+                "$ref": "#/$defs/id",
+                "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+              },
               "strength": {
                 "type": "number",
                 "description": "Irradiance in W/m^2 (Blender's sun strength).",
@@ -1258,6 +1455,10 @@
       "properties": {
         "id": {
           "$ref": "#/$defs/id"
+        },
+        "parent": {
+          "$ref": "#/$defs/id",
+          "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
         },
         "location": {
           "type": "array",
@@ -1427,6 +1628,151 @@
           "description": "Render the world background as transparent."
         }
       }
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "family"
+      ],
+      "properties": {
+        "family": {
+          "enum": [
+            "uniform",
+            "daylight"
+          ],
+          "description": "Which environment family to use."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "uniform"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "uniform",
+            "description": "The same colour from every direction: a neutral studio or a plain backdrop.",
+            "additionalProperties": false,
+            "required": [
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "uniform",
+                "description": "The same colour from every direction: a neutral studio or a plain backdrop."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the surrounding light and background. sRGB hex #rrggbb.",
+                "default": "#404040"
+              },
+              "strength": {
+                "type": "number",
+                "description": "Brightness multiplier.",
+                "minimum": 0.0,
+                "default": 1.0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "daylight"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "daylight",
+            "description": "Outdoor daylight from dawn to dusk, clear to overcast: a physical sky plus a sun whose direction, colour and softness agree with each other. Light through windows and doors comes from here too.",
+            "additionalProperties": false,
+            "required": [
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "daylight",
+                "description": "Outdoor daylight from dawn to dusk, clear to overcast: a physical sky plus a sun whose direction, colour and softness agree with each other. Light through windows and doors comes from here too."
+              },
+              "sun_elevation": {
+                "type": "number",
+                "description": "Sun height above the horizon in degrees. 2-10 early morning or late afternoon (long warm light), 25-45 mid-morning, 60+ midday; 0 to -6 is twilight with no direct sun.",
+                "minimum": -10.0,
+                "maximum": 90.0,
+                "default": 35.0
+              },
+              "sun_azimuth": {
+                "type": "number",
+                "description": "Direction toward the sun in degrees, counter-clockwise from +X seen from above (0 = +X, 90 = +Y, 180 = -X, 270 = -Y). Shadows point the other way.",
+                "minimum": -360.0,
+                "maximum": 360.0,
+                "default": 135.0
+              },
+              "cloud_cover": {
+                "type": "number",
+                "description": "0 clear sky with crisp shadows, 0.5 broken clouds, 1 overcast with no direct sun and soft, even light.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "haze": {
+                "type": "number",
+                "description": "Aerosols in the air, 0 crystal clear to 10 very hazy; more haze gives a paler sky.",
+                "minimum": 0.0,
+                "maximum": 10.0,
+                "default": 1.0
+              },
+              "sun_strength": {
+                "type": "number",
+                "description": "Irradiance of the clear-sky sun in W/m^2 (Blender sun strength); clouds and a low sun reduce it automatically.",
+                "minimum": 0.0,
+                "maximum": 100.0,
+                "default": 3.0
+              },
+              "sun_angle": {
+                "type": "number",
+                "description": "Apparent diameter of the clear-sky sun in degrees; clouds widen it.",
+                "minimum": 0.0,
+                "maximum": 45.0,
+                "default": 0.53
+              },
+              "sun_temperature_k": {
+                "type": "number",
+                "description": "Sun colour temperature in kelvin; 0 means automatic, following the elevation (about 2600 K at 5 degrees, 5600 K at 60) and the clouds.",
+                "minimum": 0.0,
+                "maximum": 25000.0,
+                "default": 0.0
+              },
+              "ground_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the land below the horizon, seen through windows and reflected in glossy things (grass, earth, pavement, snow). sRGB hex #rrggbb.",
+                "default": "#6e675c"
+              },
+              "sky_strength": {
+                "type": "number",
+                "description": "Multiplier for light from the sky (blue fill in shadows).",
+                "minimum": 0.0,
+                "maximum": 100.0,
+                "default": 1.0
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

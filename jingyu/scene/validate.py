@@ -13,8 +13,10 @@ from jsonschema.exceptions import ValidationError
 
 from ..canonical_json import canonical_sha256, load_file_strict, loads_strict
 from ..errors import Issue, JingyuError, pointer_join
+from ..placement import Placement, resolve_placement
 from ..schema_validation import Validator, check_schema
 from .normalize import apply_defaults
+from .physics import check_physics
 from .schema import SCENE_SCHEMA, scene_schema
 from .semantic import check_scene
 
@@ -29,7 +31,13 @@ class ValidationResult:
     issues: tuple[Issue, ...] = ()
     normalized: dict[str, Any] | None = None
     scene_sha256: str | None = None
+    #: ``placement``: the resolved :class:`~jingyu.placement.Placement` when the
+    #: scene passed semantic checks.
     extras: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def placement(self) -> Placement | None:
+        return self.extras.get("placement")
 
     @property
     def valid(self) -> bool:
@@ -91,11 +99,19 @@ def validate_scene(document: Any) -> ValidationResult:
     validator = _validator()
     normalized = apply_defaults(dict(document), validator.schema, validator.schema)
     issues = check_scene(normalized)
+    extras: dict[str, Any] = {}
+    if not any(i.severity == "error" for i in issues):
+        placement = resolve_placement(normalized)
+        issues += placement.issues
+        if not placement.issues:
+            issues += check_physics(normalized, placement)
+        extras["placement"] = placement
     has_errors = any(i.severity == "error" for i in issues)
     return ValidationResult(
         tuple(issues),
         normalized,
         None if has_errors else canonical_sha256(normalized),
+        extras,
     )
 
 

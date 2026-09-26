@@ -62,7 +62,11 @@ def synthetic_scene_document() -> dict[str, Any]:
         "objects": [
             {"id": "floor", "geometry": {"op": "plane", "size": [6, 6]}, "material": "floor"},
             {"id": "vase", "geometry": {"op": "vessel"}, "material": "glaze"},
-            {"id": "crate", "geometry": {"op": "box", "size": [0.2, 0.2, 0.2]}},
+            {
+                "id": "crate",
+                "geometry": {"op": "box", "size": [0.2, 0.2, 0.2]},
+                "location": [0.4, 0, 0],
+            },
             {
                 "id": "far",
                 "geometry": {"op": "box", "size": [0.1, 0.1, 0.1]},

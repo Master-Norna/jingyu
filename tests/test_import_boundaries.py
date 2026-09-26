@@ -1,7 +1,8 @@
 """Static checks of the layering rules in docs/工程规范.md, section 2.
 
 * The pure core (errors, canonical_json, conventions, generator, idmask, geometry,
-  materials) uses only the standard library, because it also runs inside Blender.
+  materials, environments, placement) uses only the standard library, because it
+  also runs inside Blender.
 * jingyu/blender/ uses only the pure core, the standard library and bpy/bmesh/mathutils.
 * Only jingyu/mcp_server.py imports the optional MCP stack.
 """
@@ -29,6 +30,8 @@ CORE_MODULES = frozenset(
         "jingyu.idmask",
         "jingyu.geometry",
         "jingyu.materials",
+        "jingyu.environments",
+        "jingyu.placement",
     }
 )
 BLENDER_THIRD_PARTY = frozenset({"bpy", "bmesh", "mathutils"})

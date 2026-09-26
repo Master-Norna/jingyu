@@ -6,14 +6,17 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..conventions import srgb_hex_to_linear
+from ..conventions import kelvin_to_linear, srgb_hex_to_linear, sun_rotation_deg
+from ..environments import ENVIRONMENTS, EnvironmentRecipe
 from ..errors import JingyuError, pointer_join
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS, Recipe
+from ..placement import resolve_placement
 from . import compat, kit
 
 DEFAULT_MATERIAL_NAME = "__jingyu_default__"
 DEFAULT_MATERIAL_COLOR = "#bfbfbf"
+SUN_NAME = "__jingyu_sun__"
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,7 @@ class BuiltObject:
 class BuildResult:
     objects: list[BuiltObject] = field(default_factory=list)
     refractive: bool = False
+    sky_model: str | None = None
     warnings: list[dict[str, str]] = field(default_factory=list)
 
     @property
@@ -40,7 +44,34 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
 
     result = BuildResult()
     world = spec["world"]
-    kit.set_world(scene, srgb_hex_to_linear(world["color"]), world["strength"])
+    try:
+        environment = (
+            ENVIRONMENTS.run(world["environment"])
+            if "environment" in world
+            else EnvironmentRecipe(srgb_hex_to_linear(world["color"]), 1.0)
+        )
+    except (KeyError, ValueError) as exc:
+        raise _build_error("/world/environment", exc) from exc
+    strength = 1.0 if "environment" in world else float(world["strength"])
+    result.sky_model = kit.set_world(scene, environment, strength)
+    sun = environment.sun
+    if sun is not None:
+        lamp = kit.new_light(
+            scene, SUN_NAME, "sun", sun.color, strength=sun.strength, angle=sun.angle
+        )
+        kit.aim(lamp, (0.0, 0.0, 0.0), None, sun_rotation_deg(sun.elevation, sun.azimuth))
+
+    try:
+        placement = resolve_placement(spec, build_meshes=False)
+    except (KeyError, ValueError) as exc:
+        raise _build_error("", exc) from exc
+    if placement.issues:
+        issue = placement.issues[0]
+        raise JingyuError(
+            "blender.build_failed",
+            f"cannot place {issue.pointer}: {issue.message}",
+            details={"pointer": issue.pointer},
+        )
 
     materials: dict[str, Any] = {}
     refractive_materials: list[Any] = []
@@ -63,7 +94,7 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
         except (KeyError, ValueError) as exc:
             raise _build_error(pointer + "/geometry", exc) from exc
         obj = kit.new_mesh_object(scene, entry["id"], mesh)
-        kit.set_transform(obj, entry["location"], entry["rotation"], entry["scale"])
+        kit.set_world_matrix(obj, placement.world[entry["id"]])
         material_id = entry.get("material")
         if material_id is not None:
             material = materials[material_id]
@@ -81,18 +112,43 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
     for entry in spec["lights"]:
         params = {
             k: entry[k]
-            for k in ("power_w", "radius", "spot_size", "blend", "size", "strength", "angle")
+            for k in (
+                "power_w",
+                "radius",
+                "spot_size",
+                "blend",
+                "size",
+                "size_y",
+                "strength",
+                "angle",
+            )
             if k in entry
         }
-        light = kit.new_light(
-            scene, entry["id"], entry["kind"], srgb_hex_to_linear(entry["color"]), **params
+        temperature = entry.get("temperature_k")
+        color = (
+            kelvin_to_linear(temperature)
+            if temperature is not None
+            else srgb_hex_to_linear(entry["color"])
         )
-        kit.aim(light, entry["location"], entry.get("look_at"), entry.get("rotation"))
+        light = kit.new_light(scene, entry["id"], entry["kind"], color, **params)
+        kit.aim(
+            light,
+            entry["location"],
+            entry.get("look_at"),
+            entry.get("rotation"),
+            placement.parent_world.get(entry["id"]),
+        )
 
     cameras: dict[str, Any] = {}
     for entry in spec["cameras"]:
         camera = kit.new_camera(scene, entry["id"], dict(entry))
-        kit.aim(camera, entry["location"], entry.get("look_at"), entry.get("rotation"))
+        kit.aim(
+            camera,
+            entry["location"],
+            entry.get("look_at"),
+            entry.get("rotation"),
+            placement.parent_world.get(entry["id"]),
+        )
         cameras[entry["id"]] = camera
     scene.camera = cameras[spec["render"]["camera"]]
 

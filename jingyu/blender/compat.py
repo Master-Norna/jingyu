@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from typing import Any
 
@@ -140,6 +141,30 @@ def enable_eevee_refraction(scene: Any, material: Any) -> None:
         scene.eevee.use_raytracing = True
 
 
+def configure_sky(node: Any, elevation_deg: float, azimuth_deg: float, haze: float) -> str:
+    """Set a sky texture node to a physical daylight sky without a sun disc.
+
+    Blender 5.0 renamed the Nishita model to multiple scattering and its dust
+    density to aerosol density.  The sky's sun rotation is measured clockwise
+    from +Y, so azimuth 0 (+X) is a rotation of 90 degrees.
+    """
+
+    types = {item.identifier for item in node.bl_rna.properties["sky_type"].enum_items}
+    sky_type = "MULTIPLE_SCATTERING" if "MULTIPLE_SCATTERING" in types else "NISHITA"
+    node.sky_type = sky_type
+    node.sun_disc = False
+    node.sun_elevation = math.radians(elevation_deg)
+    node.sun_rotation = math.radians(90.0 - azimuth_deg) % math.tau
+    node.altitude = 0.0
+    node.air_density = 1.0
+    node.ozone_density = 1.0
+    if hasattr(node, "aerosol_density"):
+        node.aerosol_density = float(haze)
+    else:
+        node.dust_density = float(haze)
+    return sky_type
+
+
 def cycles_preferences() -> Any:
     return bpy.context.preferences.addons["cycles"].preferences
 
@@ -157,6 +182,7 @@ __all__ = [
     "MIN_VERSION",
     "VIEW_TRANSFORMS",
     "available_engines",
+    "configure_sky",
     "cycles_preferences",
     "enable_eevee_refraction",
     "ensure_node_tree",

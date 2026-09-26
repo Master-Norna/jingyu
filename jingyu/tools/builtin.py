@@ -10,6 +10,7 @@ from .. import constitution as constitution_mod
 from ..candidate import CandidateStore
 from ..canonical_json import load_file_strict
 from ..doctor import diagnose
+from ..environments import ENVIRONMENTS
 from ..errors import ERROR_CODES, JingyuError
 from ..geometry import GEOMETRY
 from ..locate import IdMask
@@ -175,6 +176,8 @@ def _list_generators(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         data["geometry"] = GEOMETRY.catalog()
     if kind in ("all", "materials"):
         data["materials"] = MATERIALS.catalog()
+    if kind in ("all", "environments"):
+        data["environments"] = ENVIRONMENTS.catalog()
     return ToolResult(data)
 
 
@@ -357,13 +360,28 @@ REGISTRY.add(
 REGISTRY.add(
     Tool(
         name="list_generators",
-        title="List geometry operators and material families",
+        title="List geometry operators, material and environment families",
         description=(
-            "The primitive catalogue: every geometry operator and material family with its "
+            "The primitive catalogue: every geometry operator, material family and "
+            "environment family (the light around the scene: daylight, uniform) with its "
             "parameters, units, ranges, defaults and examples."
         ),
-        input_schema=_input({"kind": {"enum": ["all", "geometry", "materials"], "default": "all"}}),
-        output_schema=_output({"geometry": {"type": "array"}, "materials": {"type": "array"}}, []),
+        input_schema=_input(
+            {
+                "kind": {
+                    "enum": ["all", "geometry", "materials", "environments"],
+                    "default": "all",
+                }
+            }
+        ),
+        output_schema=_output(
+            {
+                "geometry": {"type": "array"},
+                "materials": {"type": "array"},
+                "environments": {"type": "array"},
+            },
+            [],
+        ),
         handler=_list_generators,
     )
 )

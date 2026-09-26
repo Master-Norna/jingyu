@@ -26,6 +26,7 @@ from .candidate import (
 )
 from .canonical_json import pretty_bytes
 from .errors import Issue, JingyuError
+from .frame import check_frame
 from .scene import validate_scene
 from .workspace import Workspace
 
@@ -93,6 +94,15 @@ def render_scene(
         if response.get("id_map") is not None:
             (staging / ID_MAP_NAME).write_bytes(pretty_bytes(response["id_map"]))
 
+        id_map = response.get("id_map")
+        frame_warnings = check_frame(
+            staging / IMAGE_NAME,
+            staging / ID_MASK_NAME if id_map is not None else None,
+            id_map,
+            normalized,
+        )
+        warnings = [*result.warnings, *frame_warnings]
+
         identity = scene_identity(normalized)
         receipt = {
             "candidate_id": _unused_candidate_id(store, identity["sha256"]),
@@ -106,13 +116,13 @@ def render_scene(
                 **{k.removesuffix("_ms"): v for k, v in response.get("timings", {}).items()},
                 "host_total": round((time.perf_counter() - started) * 1000),
             },
-            "warnings": [w.to_dict() for w in result.warnings] + list(response.get("warnings", [])),
+            "warnings": [w.to_dict() for w in warnings] + list(response.get("warnings", [])),
         }
         candidate = store.commit(staging, receipt)
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-    return RenderOutcome(candidate, tuple(result.warnings))
+    return RenderOutcome(candidate, tuple(warnings))
 
 
 def _unused_candidate_id(store: CandidateStore, scene_sha256: str) -> str:

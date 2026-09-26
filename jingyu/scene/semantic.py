@@ -9,22 +9,28 @@ import math
 from collections.abc import Mapping
 from typing import Any
 
+from ..environments import ENVIRONMENTS
 from ..errors import Issue, pointer_join
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
 
-#: Id namespaces.  Objects, lights and cameras are all nodes of one scene and
-#: share a namespace; materials have their own.
+#: Id namespaces.  Groups, objects, lights and cameras are all nodes of one
+#: scene and share a namespace; materials have their own.
 _NAMESPACES = (
     (("materials",), "Material ids are unique among materials."),
-    (("objects", "lights", "cameras"), "Ids are unique across objects, lights and cameras."),
+    (
+        ("groups", "objects", "lights", "cameras"),
+        "Ids are unique across groups, objects, lights and cameras.",
+    ),
 )
+_NODES = ("groups", "objects", "lights", "cameras")
 
 
 def check_scene(scene: Mapping[str, Any]) -> list[Issue]:
     issues: list[Issue] = []
     issues += _check_ids(scene)
     issues += _check_references(scene)
+    issues += _check_hierarchy(scene)
     issues += _check_generators(scene)
     issues += _check_aims(scene)
     issues += _check_ranges(scene)
@@ -85,6 +91,63 @@ def _check_references(scene: Mapping[str, Any]) -> list[Issue]:
     return issues
 
 
+def _check_hierarchy(scene: Mapping[str, Any]) -> list[Issue]:
+    """parent names a group, group parents form no cycle, rest_on names another object."""
+
+    issues: list[Issue] = []
+    groups = {g["id"]: g for g in scene["groups"]}
+    for collection in _NODES:
+        for index, entry in enumerate(scene[collection]):
+            parent = entry.get("parent")
+            if parent is not None and parent not in groups:
+                issues.append(
+                    Issue(
+                        "spec.unknown_reference",
+                        f"parent {parent!r} is not a group",
+                        pointer_join(collection, index, "parent"),
+                        hint=f"defined groups: {sorted(groups) or 'none'}",
+                    )
+                )
+    for index, group in enumerate(scene["groups"]):
+        seen = {group["id"]}
+        parent = group.get("parent")
+        while parent in groups:
+            if parent in seen:
+                issues.append(
+                    Issue(
+                        "spec.parent_cycle",
+                        f"group {group['id']!r} is (indirectly) its own parent",
+                        pointer_join("groups", index, "parent"),
+                    )
+                )
+                break
+            seen.add(parent)
+            parent = groups[parent].get("parent")
+    objects = set(_ids(scene, "objects"))
+    for index, obj in enumerate(scene["objects"]):
+        support = obj.get("rest_on")
+        if support is None:
+            continue
+        if support == obj["id"]:
+            issues.append(
+                Issue(
+                    "spec.unknown_reference",
+                    "an object cannot rest on itself",
+                    pointer_join("objects", index, "rest_on"),
+                )
+            )
+        elif support not in objects:
+            issues.append(
+                Issue(
+                    "spec.unknown_reference",
+                    f"rest_on {support!r} is not an object",
+                    pointer_join("objects", index, "rest_on"),
+                    hint=f"defined objects: {sorted(objects)}",
+                )
+            )
+    return issues
+
+
 def _check_generators(scene: Mapping[str, Any]) -> list[Issue]:
     issues: list[Issue] = []
     for index, obj in enumerate(scene["objects"]):
@@ -97,6 +160,18 @@ def _check_generators(scene: Mapping[str, Any]) -> list[Issue]:
                     "spec.invalid_parameter",
                     f"{geometry['op']}: {message}",
                     pointer_join("objects", index, "geometry", param),
+                )
+            )
+    environment = scene["world"].get("environment")
+    if environment is not None:
+        env_family = ENVIRONMENTS.get(environment["family"])
+        params = {k: v for k, v in environment.items() if k != "family"}
+        for param, message in env_family.check(params):
+            issues.append(
+                Issue(
+                    "spec.invalid_parameter",
+                    f"{environment['family']}: {message}",
+                    pointer_join("world", "environment", param),
                 )
             )
     for index, material in enumerate(scene["materials"]):
@@ -153,7 +228,12 @@ def _check_warnings(scene: Mapping[str, Any]) -> list[Issue]:
     world = scene["world"]
     lit = (
         any(_emits(light) for light in scene["lights"])
-        or (world["strength"] > 0 and world["color"].lower() != "#000000")
+        or (
+            "environment" not in world
+            and world["strength"] > 0
+            and world["color"].lower() != "#000000"
+        )
+        or ("environment" in world and _environment_lit(world["environment"]))
         or any(_material_emits(m) for m in scene["materials"])
     )
     if not lit:
@@ -166,6 +246,13 @@ def _check_warnings(scene: Mapping[str, Any]) -> list[Issue]:
             )
         )
     return issues
+
+
+def _environment_lit(environment: Mapping[str, Any]) -> bool:
+    try:
+        return ENVIRONMENTS.run(environment).lit
+    except ValueError:  # an invalid parameter, reported by _check_generators
+        return True
 
 
 def _emits(light: Mapping[str, Any]) -> bool:

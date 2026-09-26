@@ -129,9 +129,12 @@ def test_render_commits_a_candidate(workspace: Workspace) -> None:
     assert receipt["blender"]["runtime"]["source"] == "test-script"
     assert receipt["timings_ms"]["render"] == 1
     assert receipt["timings_ms"]["host_total"] >= 0
-    # Scene warnings come first, then the worker's.
-    assert [w["code"] for w in receipt["warnings"]] == ["spec.scene_unlit", "blender.render_failed"]
-    assert [w.code for w in outcome.warnings] == ["spec.scene_unlit"]
+    # Scene warnings come first, then checks on the frame, then the worker's.
+    codes = [w["code"] for w in receipt["warnings"]]
+    assert codes[0] == "spec.scene_unlit"
+    assert codes[-1] == "blender.render_failed"
+    assert set(codes[1:-1]) <= {"frame.not_visible", "frame.underexposed"}
+    assert [w.code for w in outcome.warnings] == codes[:-1]
     # The committed scene is the normalised one.
     assert candidate.scene()["render"]["engine"] == "cycles"
     assert "fake render done" in candidate.file("blender.log").read_text(encoding="utf-8")

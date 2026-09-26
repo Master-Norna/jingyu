@@ -12,6 +12,7 @@ from PIL import Image
 
 from jingyu import constitution, doctor
 from jingyu.candidate import Candidate
+from jingyu.environments import ENVIRONMENTS
 from jingyu.errors import ERROR_CODES, JingyuError
 from jingyu.geometry import GEOMETRY
 from jingyu.materials import MATERIALS
@@ -172,7 +173,12 @@ def test_get_scene_schema(ctx: ToolContext) -> None:
 
 @pytest.mark.parametrize(
     ("kind", "keys"),
-    [("all", {"geometry", "materials"}), ("geometry", {"geometry"}), ("materials", {"materials"})],
+    [
+        ("all", {"geometry", "materials", "environments"}),
+        ("geometry", {"geometry"}),
+        ("materials", {"materials"}),
+        ("environments", {"environments"}),
+    ],
 )
 def test_list_generators(ctx: ToolContext, kind: str, keys: set[str]) -> None:
     data = _invoke(ctx, "list_generators", {"kind": kind}).data
@@ -181,7 +187,9 @@ def test_list_generators(ctx: ToolContext, kind: str, keys: set[str]) -> None:
         assert [g["name"] for g in data["geometry"]] == GEOMETRY.names()
     if "materials" in data:
         assert [m["name"] for m in data["materials"]] == MATERIALS.names()
-    assert set(_invoke(ctx, "list_generators").data) == {"geometry", "materials"}
+    if "environments" in data:
+        assert [e["name"] for e in data["environments"]] == ENVIRONMENTS.names()
+    assert set(_invoke(ctx, "list_generators").data) == {"geometry", "materials", "environments"}
 
 
 def test_validate_scene_inline(ctx: ToolContext) -> None:

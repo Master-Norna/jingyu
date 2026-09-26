@@ -13,6 +13,7 @@ from functools import lru_cache
 from typing import Any
 
 from ..conventions import COLOR_PATTERN, ID_PATTERN
+from ..environments import ENVIRONMENTS
 from ..generator import discriminated_union
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
@@ -45,6 +46,22 @@ _LOCATION = _vec3("Position in metres.")
 _LOOK_AT = _vec3("Point in metres to aim at; the up direction stays +Z.")
 _ROTATION = _vec3("XYZ Euler rotation in degrees.")
 _AIM = {"oneOf": [{"required": ["look_at"]}, {"required": ["rotation"]}]}
+_PARENT = {
+    "$ref": "#/$defs/id",
+    "description": (
+        "Id of a group this entry belongs to. Its location, rotation and aim are then "
+        "relative to the group, and it moves with the group."
+    ),
+}
+_TEMPERATURE = {
+    "type": "number",
+    "minimum": 1667,
+    "maximum": 25000,
+    "description": (
+        "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, "
+        "7000 overcast); when given it replaces color."
+    ),
+}
 
 
 def _light_branch(kind: str, properties: dict[str, Any], aimed: bool) -> dict[str, Any]:
@@ -53,6 +70,8 @@ def _light_branch(kind: str, properties: dict[str, Any], aimed: bool) -> dict[st
         "kind": {"const": kind},
         "location": copy.deepcopy(_LOCATION),
         "color": _ref("color", default="#ffffff"),
+        "temperature_k": copy.deepcopy(_TEMPERATURE),
+        "parent": copy.deepcopy(_PARENT),
         **properties,
     }
     branch: dict[str, Any] = {
@@ -96,7 +115,19 @@ def _light_schema() -> dict[str, Any]:
             "area",
             {
                 "power_w": _number("Emitted power in watts.", 500.0, minimum=0.0),
-                "size": _number("Edge length of the square emitter in metres.", 1.0, gt=0.0),
+                "size": _number(
+                    "Width of the emitter in metres (and its depth unless size_y is given).",
+                    1.0,
+                    gt=0.0,
+                ),
+                "size_y": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": (
+                        "Depth of a rectangular emitter in metres, e.g. a window-shaped "
+                        "soft light; omitted means square."
+                    ),
+                },
             },
             aimed=True,
         ),
@@ -127,6 +158,7 @@ def _camera_schema() -> dict[str, Any]:
         **copy.deepcopy(_AIM),
         "properties": {
             "id": _ref("id"),
+            "parent": copy.deepcopy(_PARENT),
             "location": copy.deepcopy(_LOCATION),
             "look_at": copy.deepcopy(_LOOK_AT),
             "rotation": copy.deepcopy(_ROTATION),
@@ -165,6 +197,15 @@ def _object_schema() -> dict[str, Any]:
             "material": _ref(
                 "id", description="Id of an entry in materials; omitted means neutral grey."
             ),
+            "parent": copy.deepcopy(_PARENT),
+            "rest_on": _ref(
+                "id",
+                description=(
+                    "Id of an object to rest on. The object keeps its x and y, and its "
+                    "height (location z) is computed so its lowest points touch the top "
+                    "surface of that object: a table top, the inside of a bowl."
+                ),
+            ),
             "location": _vec3("Position of the object's origin in metres.", [0.0, 0.0, 0.0]),
             "rotation": _vec3("XYZ Euler rotation in degrees.", [0.0, 0.0, 0.0]),
             "scale": {
@@ -179,6 +220,30 @@ def _object_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "default": True,
                 "description": "false keeps the object in the scene but out of the render.",
+            },
+        },
+    }
+
+
+def _group_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["id"],
+        "description": (
+            "An invisible transform that objects, lights, cameras and other groups can "
+            "belong to (parent); moving the group moves everything in it."
+        ),
+        "properties": {
+            "id": _ref("id"),
+            "parent": copy.deepcopy(_PARENT),
+            "location": _vec3("Position of the group's origin in metres.", [0.0, 0.0, 0.0]),
+            "rotation": _vec3("XYZ Euler rotation in degrees.", [0.0, 0.0, 0.0]),
+            "scale": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Uniform scale factor applied to everything in the group.",
+                "default": 1.0,
             },
         },
     }
@@ -260,20 +325,35 @@ def _cached_schema() -> dict[str, Any]:
             "schema": {"const": SCENE_SCHEMA, "description": "Format and version marker."},
             "id": _ref("id"),
             "title": {"type": "string", "maxLength": 200, "description": "Human title."},
+            "intent": {
+                "type": "string",
+                "maxLength": 500,
+                "description": (
+                    "One sentence: what the picture must make a viewer see or feel. "
+                    "Reviews judge the render against it; never affects rendering."
+                ),
+            },
             "notes": {
                 "type": "string",
                 "maxLength": 8000,
-                "description": "Free-form intent and context; never affects rendering.",
+                "description": "Free-form context; never affects rendering.",
             },
             "world": {
                 "type": "object",
                 "additionalProperties": False,
                 "default": {},
+                "description": (
+                    "The light around the scene. Without environment it is a uniform "
+                    "color at strength; with one, the environment family decides and "
+                    "color and strength are ignored."
+                ),
                 "properties": {
                     "color": _ref("color", default="#404040"),
                     "strength": _number("Background light multiplier.", 1.0, minimum=0.0),
+                    "environment": _ref("environment"),
                 },
             },
+            "groups": {"type": "array", "items": _ref("group"), "maxItems": 4096, "default": []},
             "materials": {
                 "type": "array",
                 "items": _ref("material"),
@@ -297,10 +377,12 @@ def _cached_schema() -> dict[str, Any]:
             "material": MATERIALS.union_schema(
                 extra_properties={"id": _ID}, extra_required=("id",)
             ),
+            "group": _group_schema(),
             "object": _object_schema(),
             "light": _light_schema(),
             "camera": _camera_schema(),
             "render": _render_schema(),
+            "environment": ENVIRONMENTS.union_schema(),
         },
     }
 

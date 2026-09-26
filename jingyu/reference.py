@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from .environments import ENVIRONMENTS
 from .errors import ERROR_CODES
 from .generator import GeneratorDef
 from .geometry import GEOMETRY
@@ -171,9 +172,9 @@ def generators_markdown() -> str:
         "",
         "# 生成器目录",
         "",
-        "景语收集的是生成器，不是资产：形状来自几何算子，表面来自材质族，每个都是带参数的",
-        "原语。差异再小，也只是参数值不同。带 `*` 的参数必填，其余有默认值。单位：长度米、",
-        "角度度，其他单位写在字段名后缀里。",
+        "景语收集的是生成器，不是资产：形状来自几何算子，表面来自材质族，周围的光来自环境族，",
+        "每个都是带参数的原语。差异再小，也只是参数值不同。带 `*` 的参数必填，其余有默认值。",
+        "单位：长度米、角度度，其他单位写在字段名后缀里。",
         "",
         f"## 几何算子（`geometry.{GEOMETRY.discriminator}`）",
         "",
@@ -183,6 +184,9 @@ def generators_markdown() -> str:
     lines += [f"## 材质族（`material.{MATERIALS.discriminator}`）", ""]
     for family in MATERIALS:
         lines += _generator_section(family)
+    lines += [f"## 环境族（`world.environment.{ENVIRONMENTS.discriminator}`）", ""]
+    for environment in ENVIRONMENTS:
+        lines += _generator_section(environment)
     return "\n".join(lines)
 
 

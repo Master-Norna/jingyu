@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 
+from jingyu.environments import ENVIRONMENTS
 from jingyu.errors import JingyuError
 from jingyu.generator import GeneratorDef, GeneratorRegistry, discriminated_union, number
 from jingyu.geometry import GEOMETRY
@@ -13,13 +14,14 @@ from jingyu.materials import MATERIALS
 REGISTRIES = [
     pytest.param(GEOMETRY, id="geometry"),
     pytest.param(MATERIALS, id="materials"),
+    pytest.param(ENVIRONMENTS, id="environments"),
 ]
 
 
 def _definitions() -> list[Any]:
     return [
         pytest.param(registry, definition, id=f"{registry.discriminator}:{definition.name}")
-        for registry in (GEOMETRY, MATERIALS)
+        for registry in (GEOMETRY, MATERIALS, ENVIRONMENTS)
         for definition in registry
     ]
 
@@ -34,7 +36,11 @@ def test_union_schema_is_valid_draft_2020_12(registry: GeneratorRegistry[Any]) -
 
 @pytest.mark.parametrize(
     ("registry", "code"),
-    [(GEOMETRY, "geometry.unknown_op"), (MATERIALS, "material.unknown_family")],
+    [
+        (GEOMETRY, "geometry.unknown_op"),
+        (MATERIALS, "material.unknown_family"),
+        (ENVIRONMENTS, "environment.unknown_family"),
+    ],
 )
 def test_unknown_discriminator_raises_the_registry_code(
     registry: GeneratorRegistry[Any], code: str

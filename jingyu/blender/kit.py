@@ -18,8 +18,9 @@ from pathlib import Path
 from typing import Any
 
 import bpy
-from mathutils import Euler, Vector
+from mathutils import Euler, Matrix, Vector
 
+from ..environments import EnvironmentRecipe
 from ..errors import JingyuError
 from ..geometry.mesh import MeshData
 from ..materials.recipe import RGB, Recipe
@@ -76,16 +77,39 @@ def set_transform(obj: Any, location: Vec3, rotation_deg: Vec3, scale: Vec3) -> 
     obj.scale = Vector(scale)
 
 
-def aim(obj: Any, location: Vec3, look_at: Vec3 | None, rotation_deg: Vec3 | None) -> None:
-    """Place *obj* and point its -Z axis at *look_at* (Y up), or apply a rotation."""
+def set_world_matrix(obj: Any, matrix: Sequence[float]) -> None:
+    """Place *obj* by a row-major 4x4 world matrix (jingyu.geometry.transform)."""
 
-    obj.location = Vector(location)
+    obj.rotation_mode = "XYZ"
+    obj.matrix_world = Matrix([matrix[0:4], matrix[4:8], matrix[8:12], matrix[12:16]])
+
+
+def aim(
+    obj: Any,
+    location: Vec3,
+    look_at: Vec3 | None,
+    rotation_deg: Vec3 | None,
+    parent: Sequence[float] | None = None,
+) -> None:
+    """Place *obj* and point its -Z axis at *look_at* (Y up), or apply a rotation.
+
+    *location* and *rotation_deg* are relative to the *parent* world matrix when
+    one is given; *look_at* is always a world-space point.  Parent scale is not
+    applied to lights and cameras.
+    """
+
+    frame = Matrix.Identity(4)
+    if parent is not None:
+        frame = Matrix([parent[0:4], parent[4:8], parent[8:12], parent[12:16]])
+    world_location = frame @ Vector(location)
+    obj.location = world_location
     obj.rotation_mode = "XYZ"
     if look_at is not None:
-        direction = Vector(look_at) - Vector(location)
+        direction = Vector(look_at) - world_location
         obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler("XYZ")
     elif rotation_deg is not None:
-        obj.rotation_euler = Euler([math.radians(a) for a in rotation_deg], "XYZ")
+        local = Euler([math.radians(a) for a in rotation_deg], "XYZ").to_quaternion()
+        obj.rotation_euler = (frame.to_quaternion() @ local).to_euler("XYZ")
 
 
 def principled_material(name: str, recipe: Recipe) -> Any:
@@ -138,8 +162,12 @@ def new_light(scene: Any, name: str, kind: str, color: RGB, **params: Any) -> An
         light.spot_size = math.radians(float(params["spot_size"]))
         light.spot_blend = float(params["blend"])
     if kind == "area":
-        light.shape = "SQUARE"
         light.size = float(params["size"])
+        if params.get("size_y") is not None:
+            light.shape = "RECTANGLE"
+            light.size_y = float(params["size_y"])
+        else:
+            light.shape = "SQUARE"
     return _link(scene, bpy.data.objects.new(name, light), name)
 
 
@@ -159,23 +187,60 @@ def new_camera(scene: Any, name: str, params: dict[str, Any]) -> Any:
     return _link(scene, bpy.data.objects.new(name, camera), name)
 
 
-def set_world(scene: Any, color: RGB, strength: float) -> None:
+def set_world(scene: Any, environment: EnvironmentRecipe, strength: float) -> str | None:
+    """Create the world from an environment recipe; returns the sky model used, if any.
+
+    Above the horizon the background is a uniform fill plus, when the recipe has
+    one, a physical sky; below it, the recipe's ground when it has one.  All are
+    scaled by *strength*.  The recipe's sun is added separately as a lamp.
+    """
+
     world = bpy.data.worlds.new("world")
-    world.color = color
+    world.color = environment.fill
     scene.world = world
     if world.node_tree is None or compat.version() < (5, 0, 0):
         world.use_nodes = True
-    background = next(
-        (n for n in world.node_tree.nodes if n.bl_idname == "ShaderNodeBackground"), None
-    )
-    if background is None:
-        background = world.node_tree.nodes.new("ShaderNodeBackground")
-        output = next(
-            (n for n in world.node_tree.nodes if n.bl_idname == "ShaderNodeOutputWorld"), None
-        ) or world.node_tree.nodes.new("ShaderNodeOutputWorld")
-        world.node_tree.links.new(background.outputs["Background"], output.inputs["Surface"])
-    background.inputs["Color"].default_value = (*color, 1.0)
-    background.inputs["Strength"].default_value = float(strength)
+    nodes, links = world.node_tree.nodes, world.node_tree.links
+    for node in list(nodes):
+        nodes.remove(node)
+    output = nodes.new("ShaderNodeOutputWorld")
+
+    def background(color: RGB, level: float) -> Any:
+        node = nodes.new("ShaderNodeBackground")
+        node.inputs["Color"].default_value = (*color, 1.0)
+        node.inputs["Strength"].default_value = float(level) * float(strength)
+        return node
+
+    upper = background(environment.fill, environment.fill_strength).outputs["Background"]
+    model = None
+    if environment.sky is not None:
+        sky_texture = nodes.new("ShaderNodeTexSky")
+        model = compat.configure_sky(
+            sky_texture, environment.sky.elevation, environment.sky.azimuth, environment.sky.haze
+        )
+        sky = background((1.0, 1.0, 1.0), environment.sky.strength)
+        links.new(sky_texture.outputs["Color"], sky.inputs["Color"])
+        add = nodes.new("ShaderNodeAddShader")
+        links.new(sky.outputs["Background"], add.inputs[0])
+        links.new(upper, add.inputs[1])
+        upper = add.outputs["Shader"]
+    if environment.ground is None:
+        links.new(upper, output.inputs["Surface"])
+        return model
+
+    coordinates = nodes.new("ShaderNodeTexCoord")
+    separate = nodes.new("ShaderNodeSeparateXYZ")
+    above = nodes.new("ShaderNodeMath")
+    above.operation = "GREATER_THAN"
+    above.inputs[1].default_value = 0.0
+    links.new(coordinates.outputs["Generated"], separate.inputs[0])
+    links.new(separate.outputs["Z"], above.inputs[0])
+    mix = nodes.new("ShaderNodeMixShader")
+    links.new(above.outputs[0], mix.inputs["Fac"])
+    links.new(background(environment.ground, 1.0).outputs["Background"], mix.inputs[1])
+    links.new(upper, mix.inputs[2])
+    links.new(mix.outputs["Shader"], output.inputs["Surface"])
+    return model
 
 
 def select_cycles_device(scene: Any, want: str) -> str:
@@ -230,4 +295,5 @@ __all__ = [
     "select_cycles_device",
     "set_transform",
     "set_world",
+    "set_world_matrix",
 ]
