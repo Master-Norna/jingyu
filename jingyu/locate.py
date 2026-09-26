@@ -57,7 +57,11 @@ class IdMask:
                 if material in material_index
                 else None
             )
-        self._scene_objects = [o["id"] for o in scene.get("objects", []) if o.get("visible", True)]
+        self._scene_objects = [
+            o["id"]
+            for o in scene.get("objects", [])
+            if o.get("visible", True) and o.get("camera_visible", True)
+        ]
 
     @classmethod
     def load(cls, candidate: Candidate) -> IdMask:

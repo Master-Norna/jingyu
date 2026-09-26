@@ -16,7 +16,9 @@ Results:
   objects inside the camera's view, and how open the camera's surroundings are.
 
 Area lights are treated as their centre, so penumbrae are not measured; sky
-light is not a light here (it comes from everywhere).
+light is not a light here (it comes from everywhere).  Fill lights cast no
+shadow, so they reach every surface that faces them.  Objects hidden from the
+camera (reflector cards) are looked through, but still cast shadows.
 """
 
 from __future__ import annotations
@@ -60,6 +62,7 @@ def light_pass(
     depsgraph = bpy.context.evaluated_depsgraph_get()
 
     by_name = {o.blender_object.name: o.id for o in objects}
+    unseen = {o.blender_object.name for o in objects if not o.camera_visible}
     lights = list(lights)[:MAX_LIGHTS]
     width, height = _grid(scene)
     camera = scene.camera
@@ -71,7 +74,7 @@ def light_pass(
     facing_away: dict[str, Counter[str]] = defaultdict(Counter)
     shadows: Counter[tuple[str, str, str]] = Counter()
     for index, (origin, direction) in enumerate(rays):
-        hit, location, normal, _, obj, _ = scene.ray_cast(depsgraph, origin, direction)
+        hit, location, normal, obj = _camera_hit(scene, depsgraph, origin, direction, unseen)
         if not hit or obj is None or obj.name not in by_name:
             continue
         receiver = by_name[obj.name]
@@ -123,7 +126,9 @@ def light_pass(
             }
             for (light_id, caster, receiver), count in shadows.most_common(24)
         ],
-        "in_view": sorted(o.id for o in objects if _in_view(scene, camera, o.blender_object)),
+        "in_view": sorted(
+            o.id for o in objects if o.camera_visible and _in_view(scene, camera, o.blender_object)
+        ),
         "openness": _openness(scene, depsgraph, camera.matrix_world.translation),
     }
 
@@ -159,6 +164,19 @@ def _camera_rays(scene: Any, camera: Any, width: int, height: int) -> list[tuple
     return rays
 
 
+def _camera_hit(
+    scene: Any, depsgraph: Any, origin: Vector, direction: Vector, unseen: set[str]
+) -> tuple[bool, Vector, Vector, Any]:
+    """The first surface the camera sees along a ray, looking through unseen objects."""
+
+    for _ in range(_MAX_PASS_THROUGH):
+        hit, location, normal, _, obj, _ = scene.ray_cast(depsgraph, origin, direction)
+        if not hit or obj is None or obj.name not in unseen:
+            return hit, location, normal, obj
+        origin = location + direction * _EPSILON
+    return False, origin, direction, None
+
+
 def _occluder(
     scene: Any,
     depsgraph: Any,
@@ -183,10 +201,12 @@ def _occluder(
         direction = offset / distance
         if kind == "spot" and direction.dot(-axis) < math.cos(lamp.data.spot_size / 2.0):
             return ""
-        if kind == "area" and direction.dot(axis) > 0:
+        if kind in ("area", "fill") and direction.dot(axis) > 0:
             return ""
     if normal.dot(direction) <= 0:
         return ""
+    if kind == "fill":  # casts no shadow
+        return None
     origin = point + normal * _EPSILON
     for _ in range(_MAX_PASS_THROUGH):
         hit, location, _, _, obj, _ = scene.ray_cast(

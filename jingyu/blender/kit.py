@@ -114,7 +114,7 @@ def assign_material(obj: Any, material: Any) -> None:
 def new_light(scene: Any, name: str, kind: str, color: RGB, **params: Any) -> Any:
     """Create a light.  ``params`` use jingyu units (watts, metres, degrees)."""
 
-    light = bpy.data.lights.new(name, kind.upper())
+    light = bpy.data.lights.new(name, "AREA" if kind == "fill" else kind.upper())
     light.color = color
     if kind == "sun":
         light.energy = float(params["strength"])
@@ -126,14 +126,21 @@ def new_light(scene: Any, name: str, kind: str, color: RGB, **params: Any) -> An
     if kind == "spot":
         light.spot_size = math.radians(float(params["spot_size"]))
         light.spot_blend = float(params["blend"])
-    if kind == "area":
+    if kind in ("area", "fill"):
         light.size = float(params["size"])
         if params.get("size_y") is not None:
             light.shape = "RECTANGLE"
             light.size_y = float(params["size_y"])
         else:
             light.shape = "SQUARE"
-    return _link(scene, bpy.data.objects.new(name, light), name)
+    obj = _link(scene, bpy.data.objects.new(name, light), name)
+    if kind == "fill":
+        # A helper light: no shadow of its own, no highlight, never seen by the camera.
+        light.use_shadow = False
+        light.specular_factor = 0.0
+        obj.visible_glossy = False
+        obj.visible_camera = False
+    return obj
 
 
 def new_camera(scene: Any, name: str, params: dict[str, Any]) -> Any:

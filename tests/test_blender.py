@@ -337,3 +337,48 @@ def test_solved_framing_and_sun_hold_in_the_render(runtime: BlenderRuntime, tmp_
         0,
     )
     assert "environment.sun" in LightMap.load(candidate).at_uv(u, v)["lit_by"]
+
+
+def test_fill_light_and_reflector_card(runtime: BlenderRuntime, tmp_path: Path) -> None:
+    """A fill light lifts the shadow side without a shadow; a card lights but is unseen."""
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    scene = minimal_scene()
+    scene["render"]["resolution"] = [240, 180]
+    scene["lights"][0]["power_w"] = 300.0
+    card = {
+        "id": "card",
+        "geometry": {"op": "box", "size": [0.4, 0.02, 0.5]},
+        "location": [0.0, -0.9, 0.0],
+        "camera_visible": False,
+    }
+    fill = {
+        "id": "fill",
+        "kind": "fill",
+        "location": [1.5, -1.5, 0.6],
+        "look_at": [0, 0, 0.15],
+        "power_w": 400.0,
+        "size": 1.5,
+    }
+    plain = render_scene(workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S)
+    scene["objects"].append(card)
+    scene["lights"].append(fill)
+    helped = render_scene(workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S)
+    mask = IdMask.load(helped.candidate)
+    layout = mask.layout()
+    # The card stands right in front of the vase, yet the camera sees the vase through it.
+    assert "card" not in {o["object"] for o in layout["objects"]}
+    assert "card" not in layout["not_in_frame"]
+    assert layout == IdMask.load(plain.candidate).layout()
+    assert "frame.not_visible" not in {w.code for w in helped.warnings}
+    lights = LightMap.load(helped.candidate)
+    assert [light["id"] for light in lights.lights][-1] == "fill"
+    assert not any(s["light"] == "fill" for s in lights.document["shadows"])
+
+    # The fill brightens the frame overall.
+    def mean(candidate_path: Path) -> float:
+        with Image.open(candidate_path) as image:
+            gray = image.convert("L")
+            return sum(v * c for v, c in enumerate(gray.histogram())) / (gray.width * gray.height)
+
+    assert mean(helped.candidate.image_path) > mean(plain.candidate.image_path) * 1.05

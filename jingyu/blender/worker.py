@@ -113,7 +113,7 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
     if want_id_mask:
         mark = time.perf_counter()
         id_mask = output_dir / "id_mask.png"
-        id_map = passes.render_id_mask(scene, built.visible, id_mask)
+        id_map = passes.render_id_mask(scene, built.seen, id_mask)
         outputs["id_mask"] = id_mask.name
         timings["id_mask_ms"] = _ms_since(mark)
 

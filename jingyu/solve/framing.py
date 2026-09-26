@@ -117,7 +117,16 @@ def frame_subject(
             "size": {"width": round(width, 4), "height": round(height, 4)},
         },
         "frame": predicted_layout(scene, placement, camera),
-        "warnings": _warnings(placement, camera, objects, points, request, width, height),
+        "warnings": _warnings(
+            {o["id"] for o in scene["objects"] if not (o["visible"] and o["camera_visible"])},
+            placement,
+            camera,
+            objects,
+            points,
+            request,
+            width,
+            height,
+        ),
     }
 
 
@@ -338,6 +347,7 @@ def _solve_orthographic(
 
 
 def _warnings(
+    unseen: set[str],
     placement: Placement,
     camera: CameraModel,
     subject: Sequence[str],
@@ -372,7 +382,11 @@ def _warnings(
         )
     blockers: dict[str, int] = {}
     checked = points[:: max(1, len(points) // 96)]
-    others = {k: v for k, v in placement.meshes.items() if k not in subject and k not in inside}
+    others = {
+        k: v
+        for k, v in placement.meshes.items()
+        if k not in subject and k not in inside and k not in unseen
+    }
     for point in checked:
         offset = tuple(p - c for p, c in zip(point, camera.position, strict=True))
         length = math.hypot(*offset)

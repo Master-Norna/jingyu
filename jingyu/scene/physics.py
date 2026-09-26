@@ -66,7 +66,8 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
     lowest = min((box[0][2] for box in bounds.values()), default=0.0)
     for index, obj in visible:
         obj_id = obj["id"]
-        if obj_id in sunk or obj.get("attached_to"):
+        # Attached things may hang; a reflector card or flag stands on a stand we do not model.
+        if obj_id in sunk or obj.get("attached_to") or not obj.get("camera_visible", True):
             continue
         box = bounds[obj_id]
         gap: float | None = None

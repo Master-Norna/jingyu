@@ -111,7 +111,7 @@ def predicted_layout(
     rows = []
     for obj in scene["objects"]:
         mesh = placement.meshes.get(obj["id"])
-        if not obj["visible"] or mesh is None:
+        if not obj["visible"] or not obj["camera_visible"] or mesh is None:
             continue
         box = frame_box(camera, sample_points(mesh, 200))
         if box is None or box["u1"] < 0 or box["u0"] > 1 or box["v1"] < 0 or box["v0"] > 1:

@@ -148,6 +148,12 @@ GUIDE_WORKFLOW = [
     "is an environment family. Any scene with sun, sky or windows uses the daylight "
     "environment (sun elevation, azimuth, clouds, haze); do not imitate the sun with "
     "lamps. Add lamps only for light the environment cannot give.",
+    "Helper light is allowed and expected where a photographer would use it: when the "
+    "shadow side is too dark, or takes a colour cast from a neighbour (a white jar going "
+    "brown beside a wooden table), add a fill light (kind fill: soft, no shadow, no "
+    "highlight, unseen) on the shadow side, or a reflector card (a plane with "
+    "camera_visible false and a white matte material, facing the shadow side). Keep it "
+    "weaker than the key so the shadow side stays darker; it lifts, it does not relight.",
     "Describe relations, not coordinates: put things that belong together in a group "
     "and move the group; give every object that sits on something rest_on (its height "
     "is then computed); cut windows and doors into a wall with openings.",

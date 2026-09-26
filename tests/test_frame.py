@@ -71,3 +71,13 @@ def test_supports_hidden_behind_others_are_not_reported(tmp_path: Path) -> None:
     issues = check_frame(_image(tmp_path, 120), mask_path, id_map, scene)
     # "far" now holds up the cup: structure, not subject.  The cup itself is reported.
     assert [(i.code, i.pointer) for i in issues] == [("frame.not_visible", "/objects/5")]
+
+
+def test_objects_hidden_from_the_camera_are_not_expected_in_the_frame(tmp_path: Path) -> None:
+    mask_path = tmp_path / "id_mask.png"
+    synthetic_mask().save(mask_path)
+    id_map = {"schema": ID_MAP_SCHEMA, "encoding": ENCODING, "objects": SYNTHETIC_ID_MAP_OBJECTS}
+    document = synthetic_scene_document()
+    document["objects"][3]["camera_visible"] = False  # "far" becomes a reflector card
+    scene = validate_scene(document).require_valid()
+    assert check_frame(_image(tmp_path, 120), mask_path, id_map, scene) == []

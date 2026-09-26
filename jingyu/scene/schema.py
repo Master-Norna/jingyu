@@ -66,10 +66,24 @@ _TEMPERATURE = {
 }
 
 
+_KINDS = {
+    "point": "A bulb: light from a small sphere in every direction.",
+    "spot": "A cone of light, like a stage or track light.",
+    "area": "A panel of light; the bigger it is, the softer its shadows (a softbox).",
+    "sun": "Parallel light from far away. With a daylight environment use its sun instead.",
+    "fill": (
+        "A helper light that lifts the shadow side: a soft panel that casts no shadow of "
+        "its own, adds no highlight to glossy things and is never seen by the camera. Use "
+        "it where real bounce light is missing (a white wall out of frame, a reflector); "
+        "it is not a second sun."
+    ),
+}
+
+
 def _light_branch(kind: str, properties: dict[str, Any], aimed: bool) -> dict[str, Any]:
     props: dict[str, Any] = {
         "id": _ref("id"),
-        "kind": {"const": kind},
+        "kind": {"const": kind, "description": _KINDS[kind]},
         "location": copy.deepcopy(_LOCATION),
         "color": _ref("color", default="#ffffff"),
         "temperature_k": copy.deepcopy(_TEMPERATURE),
@@ -129,6 +143,24 @@ def _light_schema() -> dict[str, Any]:
                         "Depth of a rectangular emitter in metres, e.g. a window-shaped "
                         "soft light; omitted means square."
                     ),
+                },
+            },
+            aimed=True,
+        ),
+        "fill": _light_branch(
+            "fill",
+            {
+                "power_w": _number(
+                    "Emitted power in watts; keep the shadow side darker than the lit "
+                    "side (a fill a few times weaker than the key).",
+                    100.0,
+                    minimum=0.0,
+                ),
+                "size": _number("Width of the panel in metres; bigger is softer.", 1.0, gt=0.0),
+                "size_y": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Depth of a rectangular panel in metres; omitted means square.",
                 },
             },
             aimed=True,
@@ -245,6 +277,16 @@ def _object_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "default": True,
                 "description": "false keeps the object in the scene but out of the render.",
+            },
+            "camera_visible": {
+                "type": "boolean",
+                "default": True,
+                "description": (
+                    "false: the camera does not see the object, but it still reflects, "
+                    "blocks and bounces light. A reflector card (a white matte plane "
+                    "facing the shadow side) or a flag that shades a spot; it may even "
+                    "stand inside the frame. Such objects may hover."
+                ),
             },
         },
     }

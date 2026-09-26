@@ -341,3 +341,30 @@ def test_placement_does_not_change_the_scene() -> None:
     snapshot = copy.deepcopy(scene)
     resolve_placement(scene)
     assert scene == snapshot
+
+
+def test_a_reflector_card_may_hover() -> None:
+    scene = still_life()
+    scene["objects"].append(
+        {
+            "id": "card",
+            "geometry": {"op": "box", "size": [0.4, 0.01, 0.4]},
+            "location": [0.8, 0, 0.5],
+            "rotation": [0, 0, 30],
+            "camera_visible": False,
+        }
+    )
+    assert _warnings(scene) == []
+    scene["objects"][-1]["camera_visible"] = True
+    assert [code for code, _ in _warnings(scene)] == ["physics.floating"]
+
+
+def test_fill_lights_have_their_own_defaults() -> None:
+    scene = still_life()
+    scene["lights"].append(
+        {"id": "fill", "kind": "fill", "location": [1, -1, 1], "look_at": [0, 0, 0]}
+    )
+    light = validate_scene(scene).require_valid()["lights"][-1]
+    assert (light["power_w"], light["size"]) == (100.0, 1.0)
+    del scene["lights"][-1]["look_at"]
+    assert not validate_scene(scene).valid  # a fill light must be aimed

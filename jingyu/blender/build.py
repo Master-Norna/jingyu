@@ -27,6 +27,8 @@ class BuiltObject:
     pointer: str
     material: str | None
     blender_object: Any
+    #: False for objects the camera must not see (reflector cards, flags).
+    camera_visible: bool = True
 
 
 @dataclass
@@ -43,7 +45,15 @@ class BuildResult:
 
     @property
     def visible(self) -> list[BuiltObject]:
+        """Objects in the render: seen by the camera or only lighting the scene."""
+
         return [o for o in self.objects if not o.blender_object.hide_render]
+
+    @property
+    def seen(self) -> list[BuiltObject]:
+        """Rendered objects the camera sees."""
+
+        return [o for o in self.visible if o.camera_visible]
 
 
 def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
@@ -118,9 +128,12 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
             material = default_material
         kit.assign_material(obj, material)
         obj.hide_render = not entry["visible"]
+        obj.visible_camera = bool(entry["camera_visible"])
         if material_id in result.transmissive_materials:
             result.transmissive.add(entry["id"])
-        result.objects.append(BuiltObject(entry["id"], pointer, material_id, obj))
+        result.objects.append(
+            BuiltObject(entry["id"], pointer, material_id, obj, bool(entry["camera_visible"]))
+        )
 
     for entry in spec["lights"]:
         params = {

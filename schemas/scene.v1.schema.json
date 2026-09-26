@@ -1105,6 +1105,11 @@
           "type": "boolean",
           "default": true,
           "description": "false keeps the object in the scene but out of the render."
+        },
+        "camera_visible": {
+          "type": "boolean",
+          "default": true,
+          "description": "false: the camera does not see the object, but it still reflects, blocks and bounces light. A reflector card (a white matte plane facing the shadow side) or a flag that shades a spot; it may even stand inside the frame. Such objects may hover."
         }
       }
     },
@@ -1119,6 +1124,7 @@
             "point",
             "spot",
             "area",
+            "fill",
             "sun"
           ],
           "description": "Which kind of light."
@@ -1149,7 +1155,8 @@
                 "$ref": "#/$defs/id"
               },
               "kind": {
-                "const": "point"
+                "const": "point",
+                "description": "A bulb: light from a small sphere in every direction."
               },
               "location": {
                 "type": "array",
@@ -1213,7 +1220,8 @@
                 "$ref": "#/$defs/id"
               },
               "kind": {
-                "const": "spot"
+                "const": "spot",
+                "description": "A cone of light, like a stage or track light."
               },
               "location": {
                 "type": "array",
@@ -1321,7 +1329,8 @@
                 "$ref": "#/$defs/id"
               },
               "kind": {
-                "const": "area"
+                "const": "area",
+                "description": "A panel of light; the bigger it is, the softer its shadows (a softbox)."
               },
               "location": {
                 "type": "array",
@@ -1400,6 +1409,106 @@
           "if": {
             "properties": {
               "kind": {
+                "const": "fill"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "location"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "const": "fill",
+                "description": "A helper light that lifts the shadow side: a soft panel that casts no shadow of its own, adds no highlight to glossy things and is never seen by the camera. Use it where real bounce light is missing (a white wall out of frame, a reflector); it is not a second sun."
+              },
+              "location": {
+                "type": "array",
+                "description": "Position in metres.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "color": {
+                "$ref": "#/$defs/color",
+                "default": "#ffffff"
+              },
+              "temperature_k": {
+                "type": "number",
+                "minimum": 1667,
+                "maximum": 25000,
+                "description": "Colour temperature in kelvin (e.g. 1900 candle, 2700 warm bulb, 5500 noon sun, 7000 overcast); when given it replaces color."
+              },
+              "parent": {
+                "$ref": "#/$defs/id",
+                "description": "Id of a group or an object this entry belongs to. Its location, rotation and aim are then relative to that parent, and it moves with it: fruit parented to its bowl follows the bowl wherever it goes."
+              },
+              "power_w": {
+                "type": "number",
+                "description": "Emitted power in watts; keep the shadow side darker than the lit side (a fill a few times weaker than the key).",
+                "default": 100.0,
+                "minimum": 0.0
+              },
+              "size": {
+                "type": "number",
+                "description": "Width of the panel in metres; bigger is softer.",
+                "default": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              "size_y": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "description": "Depth of a rectangular panel in metres; omitted means square."
+              },
+              "look_at": {
+                "type": "array",
+                "description": "Point in metres to aim at; the up direction stays +Z.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation": {
+                "type": "array",
+                "description": "XYZ Euler rotation in degrees.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "look_at"
+                ]
+              },
+              {
+                "required": [
+                  "rotation"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
                 "const": "sun"
               }
             },
@@ -1420,7 +1529,8 @@
                 "$ref": "#/$defs/id"
               },
               "kind": {
-                "const": "sun"
+                "const": "sun",
+                "description": "Parallel light from far away. With a daylight environment use its sun instead."
               },
               "location": {
                 "type": "array",
