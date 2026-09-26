@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import Any
 
+from ..bridge.resident import WorkerPool
 from ..errors import JingyuError, pointer_join
 from ..schema_validation import Validator, check_schema
 from ..workspace import Workspace
@@ -47,6 +48,8 @@ class ToolContext:
 
     workspace: Workspace
     render_timeout_s: float = 900.0
+    #: Long-lived hosts keep Blender workers alive between renders (None: one per render).
+    workers: WorkerPool | None = None
 
 
 Handler = Callable[[ToolContext, dict[str, Any]], ToolResult]

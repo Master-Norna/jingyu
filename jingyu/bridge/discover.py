@@ -41,6 +41,14 @@ class BlenderRuntime:
     source: str
 
     def worker_command(self, request: Path, response: Path) -> list[str]:
+        return self._command([str(request), str(response)])
+
+    def serve_command(self) -> list[str]:
+        """A worker that stays alive and reads one request per line of stdin."""
+
+        return self._command(["--serve"])
+
+    def _command(self, arguments: list[str]) -> list[str]:
         if self.kind == "executable":
             return [
                 self.path,
@@ -51,10 +59,9 @@ class BlenderRuntime:
                 "--python",
                 str(WORKER_SCRIPT),
                 "--",
-                str(request),
-                str(response),
+                *arguments,
             ]
-        return [self.path, "-m", "jingyu.blender.worker", str(request), str(response)]
+        return [self.path, "-m", "jingyu.blender.worker", *arguments]
 
     def environment(self, base: Mapping[str, str]) -> dict[str, str]:
         env = dict(base)

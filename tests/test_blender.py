@@ -566,3 +566,42 @@ def test_texture_weathering_and_mist_render(runtime: BlenderRuntime, tmp_path: P
         return (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
 
     assert spread("wood") > spread("plain") + 3
+
+
+def test_a_resident_worker_serves_renders_and_recovers(
+    runtime: BlenderRuntime, tmp_path: Path
+) -> None:
+    from jingyu.bridge.resident import WorkerPool
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    pool = WorkerPool(tmp_path / "workers")
+    scene = minimal_scene()
+    scene["render"]["resolution"] = [96, 72]
+    try:
+        first = render_scene(workspace, scene, runtime=runtime, timeout_s=TIMEOUT_S, workers=pool)
+        worker = next(iter(pool._workers.values()))
+        process = worker._process
+        second = render_scene(workspace, scene, runtime=runtime, timeout_s=TIMEOUT_S, workers=pool)
+        assert worker._process is process and worker.served == 2
+        store = CandidateStore(workspace)
+        assert store.verify(first.candidate) == [] and store.verify(second.candidate) == []
+        # Each candidate keeps only its own part of the worker's output.
+        for outcome in (first, second):
+            log = outcome.candidate.file("blender.log").read_text(
+                encoding="utf-8", errors="replace"
+            )
+            assert log.count("jingyu worker: request") == 1
+        # A dead worker is replaced by the next request.
+        assert process is not None
+        process.kill()
+        process.wait()
+        third = render_scene(workspace, scene, runtime=runtime, timeout_s=TIMEOUT_S, workers=pool)
+        assert store.verify(third.candidate) == [] and worker._process is not process
+        # An overrun kills the worker; the next render starts a fresh one.
+        with pytest.raises(JingyuError) as info:
+            render_scene(workspace, scene, runtime=runtime, timeout_s=0.01, workers=pool)
+        assert info.value.code == "blender.timeout"
+        fourth = render_scene(workspace, scene, runtime=runtime, timeout_s=TIMEOUT_S, workers=pool)
+        assert store.verify(fourth.candidate) == []
+    finally:
+        pool.close()

@@ -55,8 +55,9 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 ```
 
 模型先调用 `get_guide`，按其中的流程工作：写下一句话的意图，`list_generators` 查原语
-目录，写场景，`validate_scene`，`render_scene` 预览，`view_candidate` 看图，
-`locate_in_candidate` 定位，`edit_scene` 按 id 改场景再渲染，`diff_candidates` 确认改动。
+目录，写场景，`validate_scene`；知道要什么效果时用 `frame_subject` 求机位、`aim_sun` 求光；
+`render_scene` 预览，`view_candidate` 看图，`locate_in_candidate` 定位，`edit_scene` 按 id
+改场景再渲染，`diff_candidates` 确认改动；一组作品用 `check_charter` 对照画面宪章。
 全部工具见 [docs/工具.md](docs/工具.md)。
 
 ## 文档
@@ -75,10 +76,11 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 
 ## 状态
 
-第一波（地基）已完成：生成器框架与首批几何算子、材质族，场景描述与校验，Blender 封装
-与隔离渲染，不可变候选与 ID 遮罩，看图与定位工具，CLI 与 MCP。第二波完成了环境族（日光）、
-编组与放置关系、物理与画面检查、按 id 修改场景。第三波加了光照诊断通道、颜色测量、
-室内漏光检查和警告降噪，让模型看清渲染出来的到底是什么。进度见 [CHANGELOG](CHANGELOG.md)。
+第一到三波完成了地基、放置关系与物理检查、光照诊断。第四波按《景语待办汇总》补上：
+从目标求机位和求光；补光与反光板；物体父级；房间、桌椅书架等装配生成器与部件材质；
+程序纹理、风化和空气的质感层；挤出、扫掠、散布与地形、岩石、树、草、水；墨线、水彩、
+油画、赛璐璐风格；画面宪章；常驻 worker。进度见 [CHANGELOG](CHANGELOG.md)，方案见
+[技术方案](docs/技术方案.md)。
 
 ## 许可
 

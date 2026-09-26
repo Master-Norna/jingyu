@@ -14,6 +14,7 @@ from PIL import Image
 
 from . import __version__
 from .bridge import DEFAULT_TIMEOUT_S, BlenderRuntime, discover_runtime, run_worker
+from .bridge.resident import WorkerPool
 from .bridge.runner import LOG_NAME
 from .candidate import (
     ID_MAP_NAME,
@@ -70,6 +71,7 @@ def render_scene(
     quality: Quality = "preview",
     runtime: BlenderRuntime | None = None,
     timeout_s: float = DEFAULT_TIMEOUT_S,
+    workers: WorkerPool | None = None,
 ) -> RenderOutcome:
     """Validate, render in an isolated worker and commit a candidate."""
 
@@ -81,7 +83,7 @@ def render_scene(
     staging.mkdir(parents=True)
     started = time.perf_counter()
     try:
-        run = run_worker(
+        run = (workers.run if workers is not None else run_worker)(
             runtime,
             {
                 "action": "render",

@@ -257,6 +257,7 @@ def _render_scene(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         scene,
         quality=args.get("quality", "preview"),
         timeout_s=ctx.render_timeout_s,
+        workers=ctx.workers,
     )
     candidate = outcome.candidate
     receipt = candidate.receipt

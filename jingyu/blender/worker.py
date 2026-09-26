@@ -138,12 +138,38 @@ def _ms_since(mark: float) -> int:
 
 def main(argv: list[str]) -> int:
     args = argv[argv.index("--") + 1 :] if "--" in argv else argv[1:]
+    if args == ["--serve"]:
+        return serve()
     if len(args) != 2:
-        print("usage: worker REQUEST.json RESPONSE.json", file=sys.stderr)
+        print("usage: worker REQUEST.json RESPONSE.json | worker --serve", file=sys.stderr)
         return 64
-    request_path, response_path = Path(args[0]), Path(args[1])
+    return handle(Path(args[0]), Path(args[1]))
+
+
+def serve() -> int:
+    """Stay alive and handle one request per line of stdin: {"request", "response"}.
+
+    Every request starts from factory settings, so one render cannot leak into
+    the next; the host recycles the process now and then all the same.
+    """
+
+    for line in sys.stdin:
+        line = line.strip()
+        if not line:
+            continue
+        job = json.loads(line)
+        handle(Path(job["request"]), Path(job["response"]))
+        sys.stdout.flush()
+        sys.stderr.flush()
+    return 0
+
+
+def handle(request_path: Path, response_path: Path) -> int:
+    """Handle one request file; always try to write the response file."""
 
     from jingyu.errors import JingyuError
+
+    print(f"jingyu worker: request {request_path}", flush=True)
 
     action = "unknown"
     try:

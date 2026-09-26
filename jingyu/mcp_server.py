@@ -22,6 +22,7 @@ from mcp.server.stdio import stdio_server
 
 from . import __version__
 from .bridge import DEFAULT_TIMEOUT_S
+from .bridge.resident import WorkerPool
 from .errors import JingyuError
 from .tools import REGISTRY, Tool, ToolContext, ToolResult
 from .workspace import Workspace
@@ -117,8 +118,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--workspace", help="workspace root (default: $JINGYU_WORKSPACE or cwd)")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_S)
     args = parser.parse_args(argv)
-    context = ToolContext(Workspace.at(args.workspace), render_timeout_s=args.timeout)
-    anyio.run(_serve, build_server(context))
+    workspace = Workspace.at(args.workspace)
+    # The server lives for a whole conversation: keep a Blender worker warm.
+    workers = WorkerPool(workspace.root / ".jingyu" / "workers")
+    context = ToolContext(workspace, render_timeout_s=args.timeout, workers=workers)
+    try:
+        anyio.run(_serve, build_server(context))
+    finally:
+        workers.close()
 
 
 __all__ = ["INSTRUCTIONS", "build_server", "error_result", "main", "mcp_tool", "success_result"]
