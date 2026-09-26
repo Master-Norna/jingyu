@@ -6,10 +6,6 @@
 Blender 进程里渲染它；模型看图、指出哪里不对，景语把那个位置翻译回场景里可以修改的
 字段；改完再渲染。每一张图都能追回到它的场景，每一次渲染都保留下来可以比较。
 
-![八件器物](docs/images/八件器物.jpg)
-
-*上图八件器物（杯、碗、花瓶、酒瓶、玻璃罐、铜罐、银瓶、玻璃杯）全部来自同一个
-`vessel` 函数，每件只是一行参数：[`examples/scenes/eight-vessels.json`](examples/scenes/eight-vessels.json)。*
 
 ## 核心想法
 
