@@ -26,6 +26,7 @@ def other(make_candidate: CandidateFactory, candidate: Candidate) -> Candidate:
 
 EXPECTED_SIZES = {
     "full": (WIDTH, HEIGHT),
+    "render": (WIDTH, HEIGHT),  # without a style, the image itself
     "glance": (WIDTH, HEIGHT),
     "flip": (WIDTH, HEIGHT),
     "squint": (WIDTH, HEIGHT),
