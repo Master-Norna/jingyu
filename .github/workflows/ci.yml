@@ -95,7 +95,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[mcp,dev,blender]"
-          python -m pip check
+          # The bpy 5.0.1 wheel declares a cp39 tag in its WHEEL metadata, so pip check
+          # reports it as "not supported on this platform"; everything else must be clean.
+          problems="$(python -m pip check 2>&1 | grep -v -E '^bpy [0-9.]+ is not supported on this platform$' || true)"
+          if [ -n "$problems" ] && [ "$problems" != "No broken requirements found." ]; then
+            echo "$problems"
+            exit 1
+          fi
       - name: Doctor (every engine)
         run: jingyu doctor --deep
       - name: Test (Blender)
