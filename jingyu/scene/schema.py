@@ -187,6 +187,15 @@ def _camera_schema() -> dict[str, Any]:
     }
 
 
+def _accept_warnings(description: str) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "uniqueItems": True,
+        "items": {"enum": list(ACCEPTABLE_WARNINGS)},
+        "description": description,
+    }
+
+
 def _object_schema() -> dict[str, Any]:
     return {
         "type": "object",
@@ -199,16 +208,10 @@ def _object_schema() -> dict[str, Any]:
                 "id", description="Id of an entry in materials; omitted means neutral grey."
             ),
             "parent": copy.deepcopy(_PARENT),
-            "accept_warnings": {
-                "type": "array",
-                "uniqueItems": True,
-                "items": {"enum": list(ACCEPTABLE_WARNINGS)},
-                "description": (
-                    "Warning codes that are intended for this object only, e.g. "
-                    "frame.not_visible for a wall or ceiling that closes the room out of "
-                    "sight."
-                ),
-            },
+            "accept_warnings": _accept_warnings(
+                "Warning codes that are intended for this object only, e.g. "
+                "frame.not_visible for a wall or ceiling that closes the room out of sight."
+            ),
             "attached_to": {
                 "type": "array",
                 "uniqueItems": True,
@@ -258,6 +261,10 @@ def _group_schema() -> dict[str, Any]:
         "properties": {
             "id": _ref("id"),
             "parent": copy.deepcopy(_PARENT),
+            "accept_warnings": _accept_warnings(
+                "Warning codes that are intended for every object in this group, at any "
+                "depth, e.g. frame.not_visible for the hidden legs and underside of a table."
+            ),
             "location": _vec3("Position of the group's origin in metres.", [0.0, 0.0, 0.0]),
             "rotation": _vec3("XYZ Euler rotation in degrees.", [0.0, 0.0, 0.0]),
             "scale": {

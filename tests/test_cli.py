@@ -32,7 +32,26 @@ def test_tools_lists_the_registry(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["tools"]) == 0
     listed = json.loads(capsys.readouterr().out)
     assert [t["name"] for t in listed] == REGISTRY.names()
-    assert all(set(t) == {"name", "title", "description"} for t in listed)
+    assert all({"name", "title", "description", "arguments"} <= set(t) for t in listed)
+    render = next(t for t in listed if t["name"] == "render_scene")
+    assert render["arguments"]["quality"] == '"preview" | "final" = "preview"'
+    assert render["arguments"]["hide"] == "array of string = []"
+    assert render["exactly_one_of"] == ["scene", "scene_path", "from_candidate"]
+    locate = next(t for t in listed if t["name"] == "locate_in_candidate")
+    assert locate["arguments"]["candidate_id"] == "string (required)"
+
+
+def test_tools_with_a_name_prints_its_schemas(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["tools", "view_candidate"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    tool = REGISTRY.get("view_candidate")
+    assert shown["input_schema"] == tool.input_schema
+    assert shown["output_schema"] == tool.output_schema
+
+
+def test_tools_with_an_unknown_name_fails(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["tools", "no_such_tool"]) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "tool.unknown"
 
 
 def test_schema_prints_the_scene_schema(capsys: pytest.CaptureFixture[str]) -> None:
@@ -184,6 +203,26 @@ def test_view_writes_the_image(
     (path,) = data["images"]
     assert Path(path) == image_dir / f"{candidate.id}-grayscale.png"
     assert Path(path).read_bytes().startswith(b"\x89PNG")
+
+
+def test_call_names_cropped_views_by_their_region_in_reading_order(
+    capsys: pytest.CaptureFixture[str], workspace: Workspace, candidate: Candidate
+) -> None:
+    arguments = {"candidate_id": candidate.id, "view": "full"}
+    for region, suffix in (
+        ({"x0": 10, "y0": 5, "x1": 40, "y1": 30}, "crop-10-5-40-30"),
+        ({"u0": 0.1, "v0": 0.2, "u1": 0.5, "v1": 0.6}, "crop-0.1-0.2-0.5-0.6"),
+    ):
+        code, data = _run(
+            capsys,
+            workspace,
+            "call",
+            "view_candidate",
+            "--args",
+            json.dumps({**arguments, "region": region}),
+        )
+        assert code == 0
+        assert Path(data["images"][0]).name == f"{candidate.id}-full-{suffix}.png"
 
 
 def test_view_defaults_to_the_workspace_views_directory(

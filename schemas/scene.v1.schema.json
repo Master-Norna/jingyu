@@ -954,6 +954,23 @@
           "$ref": "#/$defs/id",
           "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
         },
+        "accept_warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "spec.scene_unlit",
+              "spec.empty_scene",
+              "physics.intersection",
+              "physics.floating",
+              "frame.not_visible",
+              "frame.underexposed",
+              "frame.overexposed",
+              "light.open_to_sky"
+            ]
+          },
+          "description": "Warning codes that are intended for every object in this group, at any depth, e.g. frame.not_visible for the hidden legs and underside of a table."
+        },
         "location": {
           "type": "array",
           "description": "Position of the group's origin in metres.",

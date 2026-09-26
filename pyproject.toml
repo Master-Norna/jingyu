@@ -82,6 +82,8 @@ ignore = [
 
 [tool.mypy]
 python_version = "3.11"
+# CI type-checks on Linux; pin the platform so a run on Windows or macOS agrees.
+platform = "linux"
 strict = true
 warn_unreachable = true
 packages = ["jingyu"]

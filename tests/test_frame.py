@@ -52,3 +52,22 @@ def test_objects_missing_from_the_frame(tmp_path: Path) -> None:
     issues = check_frame(_image(tmp_path, 120), mask_path, id_map, _scene())
     # "far" is visible but painted nowhere; "ghost" is hidden and not expected.
     assert [(i.code, i.pointer) for i in issues] == [("frame.not_visible", "/objects/3")]
+
+
+def test_supports_hidden_behind_others_are_not_reported(tmp_path: Path) -> None:
+    mask_path = tmp_path / "id_mask.png"
+    synthetic_mask().save(mask_path)
+    id_map = {"schema": ID_MAP_SCHEMA, "encoding": ENCODING, "objects": SYNTHETIC_ID_MAP_OBJECTS}
+    document = synthetic_scene_document()
+    document["objects"].append(
+        {
+            "id": "cup",
+            "geometry": {"op": "cylinder", "radius": 0.02, "height": 0.05},
+            "location": [0, 50, 0],
+            "rest_on": "far",
+        }
+    )
+    scene = validate_scene(document).require_valid()
+    issues = check_frame(_image(tmp_path, 120), mask_path, id_map, scene)
+    # "far" now holds up the cup: structure, not subject.  The cup itself is reported.
+    assert [(i.code, i.pointer) for i in issues] == [("frame.not_visible", "/objects/5")]

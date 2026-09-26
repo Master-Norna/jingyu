@@ -292,6 +292,20 @@ def test_cli_names_view_images_after_what_they_show(
     assert all(name.startswith(candidate.id) for name in names)
 
 
+def test_a_group_accepts_warnings_for_everything_inside_it() -> None:
+    scene = _sunk_orange()
+    scene["groups"] += [
+        {"id": "outer", "accept_warnings": ["physics.intersection"]},
+        {"id": "inner", "parent": "outer"},
+    ]
+    assert _warnings(scene) == [("physics.intersection", "/objects/3/location")]
+    scene["objects"][3]["parent"] = "inner"
+    scene["objects"][3]["location"] = [0.4, 0.3, 0.03]
+    assert _warnings(scene) == []
+    scene["groups"][-2]["accept_warnings"] = ["physics.floating"]
+    assert _warnings(scene) == [("physics.intersection", "/objects/3/location")]
+
+
 def test_an_object_can_accept_warnings_about_itself() -> None:
     scene = _sunk_orange()
     scene["objects"][2]["accept_warnings"] = ["physics.intersection"]  # the bowl: not it

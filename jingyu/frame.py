@@ -57,12 +57,20 @@ def _not_visible(
 
     Objects outside the view are usually deliberate (a ceiling, a bounce card) and
     are only listed by describe_layout.  Without a light pass there is no view
-    test, so every missing object is reported.
+    test, so every missing object is reported.  Objects that hold up or carry
+    others (a ``rest_on`` support, a parent) are structure, not subject: they
+    are not reported when something in front hides them.
     """
 
     with Image.open(id_mask_path) as image:
         mask = IdMask(image.convert("RGBA"), id_map, scene)
     missing = set(mask.layout()["not_in_frame"])
+    carriers = {o.get("rest_on") for o in scene["objects"]} | {
+        entry.get("parent")
+        for collection in ("groups", "objects", "lights", "cameras")
+        for entry in scene[collection]
+    }
+    missing -= carriers
     in_view = None if light_map is None else set(light_map.get("in_view", []))
     return [
         Issue(
@@ -74,7 +82,7 @@ def _not_visible(
             severity="warning",
             hint="another object hides it completely; if it is only there to shape the light "
             '(a wall or ceiling closing the room), add "accept_warnings": '
-            '["frame.not_visible"] to it'
+            '["frame.not_visible"] to it, or to the group it belongs to'
             if in_view is not None
             else "it is outside the camera's view or hidden behind another object",
         )

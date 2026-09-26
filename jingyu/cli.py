@@ -14,6 +14,7 @@ import argparse
 import json
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -62,7 +63,8 @@ def _image_stem(name: str, arguments: dict[str, Any], data: dict[str, Any]) -> s
         parts.append(str(arguments["light"]))
     region = arguments.get("region")
     if isinstance(region, dict):
-        parts.append("crop-" + "-".join(str(region[k]) for k in sorted(region)))
+        order = ("x0", "y0", "x1", "y1") if "x0" in region else ("u0", "v0", "u1", "v1")
+        parts.append("crop-" + "-".join(str(region[k]) for k in order if k in region))
     if "other_candidate_id" in arguments:
         parts.append(str(arguments["other_candidate_id"]))
     return "-".join(parts)
@@ -101,6 +103,76 @@ def _read_local_json(path: str) -> Any:
         raise JingyuError("io.unreadable", f"cannot read {path}: {exc.strerror or exc}") from exc
 
 
+def _type_of(schema: Mapping[str, Any]) -> str:
+    if "enum" in schema:
+        return " | ".join(json.dumps(v, ensure_ascii=False) for v in schema["enum"])
+    kind = schema.get("type")
+    if kind == "array":
+        items = schema.get("items")
+        return f"array of {_type_of(items)}" if isinstance(items, Mapping) else "array"
+    if isinstance(kind, list):
+        return " | ".join(str(k) for k in kind)
+    if kind is None and "oneOf" in schema:
+        return "object"
+    return str(kind or "any")
+
+
+def _argument_summary(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """One line per argument: its type, and whether it is required or its default."""
+
+    required = set(schema.get("required", []))
+    arguments: dict[str, str] = {}
+    for name, sub in schema.get("properties", {}).items():
+        line = _type_of(sub)
+        if name in required:
+            line += " (required)"
+        elif "default" in sub:
+            line += f" = {json.dumps(sub['default'], ensure_ascii=False)}"
+        arguments[name] = line
+    summary: dict[str, Any] = {"arguments": arguments}
+    alternatives = [
+        " + ".join(option["required"])
+        for option in schema.get("oneOf", [])
+        if isinstance(option, Mapping) and option.get("required")
+    ]
+    if alternatives:
+        summary["exactly_one_of"] = alternatives
+    return summary
+
+
+def _tools(name: str | None) -> int:
+    """List every tool with its arguments, or print one tool's full schemas."""
+
+    if name is None:
+        _print(
+            [
+                {
+                    "name": t.name,
+                    "title": t.title,
+                    "description": t.description,
+                    **_argument_summary(t.input_schema),
+                }
+                for t in REGISTRY
+            ]
+        )
+        return 0
+    try:
+        tool = REGISTRY.get(name)
+    except JingyuError as exc:
+        _print({"error": exc.to_dict()})
+        return 1
+    _print(
+        {
+            "name": tool.name,
+            "title": tool.title,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "output_schema": tool.output_schema,
+        }
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="jingyu", description="Jingyu image toolkit")
     parser.add_argument("--version", action="version", version=f"jingyu {__version__}")
@@ -113,7 +185,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    sub.add_parser("tools", help="list the available tools")
+    tools = sub.add_parser(
+        "tools", help="list the tools and their arguments, or show one tool's full contract"
+    )
+    tools.add_argument("name", nargs="?", help="a tool name: print its input and output schemas")
 
     call = sub.add_parser("call", help="call any tool with JSON arguments")
     call.add_argument("tool")
@@ -211,8 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "tools":
-        _print([{"name": t.name, "title": t.title, "description": t.description} for t in REGISTRY])
-        return 0
+        return _tools(args.name)
     if args.command == "schema":
         text = json.dumps(scene_schema(), ensure_ascii=False, indent=2) + "\n"
         if args.write:
