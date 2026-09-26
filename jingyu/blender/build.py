@@ -11,7 +11,7 @@ from ..environments import ENVIRONMENTS, EnvironmentRecipe
 from ..errors import JingyuError, pointer_join
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS, Recipe
-from ..placement import resolve_placement
+from ..placement import aim_matrix, resolve_placement
 from . import compat, kit
 
 DEFAULT_MATERIAL_NAME = "__jingyu_default__"
@@ -66,7 +66,9 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
         lamp = kit.new_light(
             scene, SUN_NAME, "sun", sun.color, strength=sun.strength, angle=sun.angle
         )
-        kit.aim(lamp, (0.0, 0.0, 0.0), None, sun_rotation_deg(sun.elevation, sun.azimuth))
+        kit.set_world_matrix(
+            lamp, aim_matrix((0.0, 0.0, 0.0), None, sun_rotation_deg(sun.elevation, sun.azimuth))
+        )
         result.lights.append((ENVIRONMENT_SUN_ID, "sun", lamp))
 
     try:
@@ -143,24 +145,12 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
         )
         light = kit.new_light(scene, entry["id"], entry["kind"], color, **params)
         result.lights.append((entry["id"], entry["kind"], light))
-        kit.aim(
-            light,
-            entry["location"],
-            entry.get("look_at"),
-            entry.get("rotation"),
-            placement.parent_world.get(entry["id"]),
-        )
+        kit.set_world_matrix(light, placement.oriented[entry["id"]])
 
     cameras: dict[str, Any] = {}
     for entry in spec["cameras"]:
         camera = kit.new_camera(scene, entry["id"], dict(entry))
-        kit.aim(
-            camera,
-            entry["location"],
-            entry.get("look_at"),
-            entry.get("rotation"),
-            placement.parent_world.get(entry["id"]),
-        )
+        kit.set_world_matrix(camera, placement.oriented[entry["id"]])
         cameras[entry["id"]] = camera
     scene.camera = cameras[spec["render"]["camera"]]
 

@@ -115,6 +115,16 @@ class IdMask:
             )
         return box
 
+    def background_pixels(self, box: Box) -> list[tuple[int, int]]:
+        """Pixels of *box* that show no object: the world behind everything."""
+
+        return [
+            (x, y)
+            for y in range(box.y0, box.y1)
+            for x in range(box.x0, box.x1)
+            if self.index_at(x, y) == BACKGROUND
+        ]
+
     def counts(self, box: Box) -> Counter[int | None]:
         counts: Counter[int | None] = Counter()
         for y in range(box.y0, box.y1):

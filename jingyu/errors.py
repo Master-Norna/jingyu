@@ -31,7 +31,7 @@ ERROR_CODES: dict[str, str] = {
     "spec.invalid_parameter": "A generator parameter is out of its valid range or inconsistent.",
     "spec.degenerate_aim": "A camera or light looks at its own location.",
     "spec.invalid_range": "A lower bound is not below its upper bound.",
-    "spec.parent_cycle": "Groups are nested inside themselves.",
+    "spec.parent_cycle": "Groups or objects are nested inside themselves (a parent loop).",
     "spec.placement_failed": "rest_on cannot be resolved: nothing below, or supports loop.",
     "spec.invalid": "The scene has validation errors; see details.issues.",
     "patch.failed": "A scene edit operation could not be applied; nothing was changed.",

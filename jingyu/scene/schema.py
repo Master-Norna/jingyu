@@ -50,8 +50,9 @@ _AIM = {"oneOf": [{"required": ["look_at"]}, {"required": ["rotation"]}]}
 _PARENT = {
     "$ref": "#/$defs/id",
     "description": (
-        "Id of a group this entry belongs to. Its location, rotation and aim are then "
-        "relative to the group, and it moves with the group."
+        "Id of a group or an object this entry belongs to. Its location, rotation and "
+        "aim are then relative to that parent, and it moves with it: fruit parented to "
+        "its bowl follows the bowl wherever it goes."
     ),
 }
 _TEMPERATURE = {

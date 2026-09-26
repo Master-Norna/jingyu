@@ -92,37 +92,43 @@ def _check_references(scene: Mapping[str, Any]) -> list[Issue]:
 
 
 def _check_hierarchy(scene: Mapping[str, Any]) -> list[Issue]:
-    """parent names a group, group parents form no cycle, rest_on names another object."""
+    """parent names a group or an object, parents form no loop, rest_on names another object."""
 
     issues: list[Issue] = []
-    groups = {g["id"]: g for g in scene["groups"]}
+    carriers = {e["id"]: e for c in ("groups", "objects") for e in scene[c]}
     for collection in _NODES:
         for index, entry in enumerate(scene[collection]):
             parent = entry.get("parent")
-            if parent is not None and parent not in groups:
+            if parent is None:
+                continue
+            if parent == entry["id"] or parent not in carriers:
                 issues.append(
                     Issue(
                         "spec.unknown_reference",
-                        f"parent {parent!r} is not a group",
+                        f"parent {parent!r} is not another group or object",
                         pointer_join(collection, index, "parent"),
-                        hint=f"defined groups: {sorted(groups) or 'none'}",
+                        hint=f"groups: {sorted(g['id'] for g in scene['groups']) or 'none'}; "
+                        "any object id also works",
                     )
                 )
-    for index, group in enumerate(scene["groups"]):
-        seen = {group["id"]}
-        parent = group.get("parent")
-        while parent in groups:
-            if parent in seen:
-                issues.append(
-                    Issue(
-                        "spec.parent_cycle",
-                        f"group {group['id']!r} is (indirectly) its own parent",
-                        pointer_join("groups", index, "parent"),
+    for collection in ("groups", "objects"):
+        for index, entry in enumerate(scene[collection]):
+            seen = {entry["id"]}
+            parent = entry.get("parent")
+            if parent == entry["id"]:  # reported above as an unknown reference
+                continue
+            while parent in carriers:
+                if parent in seen:
+                    issues.append(
+                        Issue(
+                            "spec.parent_cycle",
+                            f"{entry['id']!r} is (indirectly) its own parent",
+                            pointer_join(collection, index, "parent"),
+                        )
                     )
-                )
-                break
-            seen.add(parent)
-            parent = groups[parent].get("parent")
+                    break
+                seen.add(parent)
+                parent = carriers[parent].get("parent")
     objects = set(_ids(scene, "objects"))
     for index, obj in enumerate(scene["objects"]):
         for position, other in enumerate(obj.get("attached_to", [])):

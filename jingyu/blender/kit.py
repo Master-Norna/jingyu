@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import bpy
-from mathutils import Euler, Matrix, Vector
+from mathutils import Matrix
 
 from ..environments import EnvironmentRecipe
 from ..errors import JingyuError
@@ -70,46 +70,11 @@ def new_mesh_object(scene: Any, name: str, data: MeshData) -> Any:
     return _link(scene, bpy.data.objects.new(name, mesh), name)
 
 
-def set_transform(obj: Any, location: Vec3, rotation_deg: Vec3, scale: Vec3) -> None:
-    obj.location = Vector(location)
-    obj.rotation_mode = "XYZ"
-    obj.rotation_euler = Euler([math.radians(a) for a in rotation_deg], "XYZ")
-    obj.scale = Vector(scale)
-
-
 def set_world_matrix(obj: Any, matrix: Sequence[float]) -> None:
     """Place *obj* by a row-major 4x4 world matrix (jingyu.geometry.transform)."""
 
     obj.rotation_mode = "XYZ"
     obj.matrix_world = Matrix([matrix[0:4], matrix[4:8], matrix[8:12], matrix[12:16]])
-
-
-def aim(
-    obj: Any,
-    location: Vec3,
-    look_at: Vec3 | None,
-    rotation_deg: Vec3 | None,
-    parent: Sequence[float] | None = None,
-) -> None:
-    """Place *obj* and point its -Z axis at *look_at* (Y up), or apply a rotation.
-
-    *location* and *rotation_deg* are relative to the *parent* world matrix when
-    one is given; *look_at* is always a world-space point.  Parent scale is not
-    applied to lights and cameras.
-    """
-
-    frame = Matrix.Identity(4)
-    if parent is not None:
-        frame = Matrix([parent[0:4], parent[4:8], parent[8:12], parent[12:16]])
-    world_location = frame @ Vector(location)
-    obj.location = world_location
-    obj.rotation_mode = "XYZ"
-    if look_at is not None:
-        direction = Vector(look_at) - world_location
-        obj.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler("XYZ")
-    elif rotation_deg is not None:
-        local = Euler([math.radians(a) for a in rotation_deg], "XYZ").to_quaternion()
-        obj.rotation_euler = (frame.to_quaternion() @ local).to_euler("XYZ")
 
 
 def principled_material(name: str, recipe: Recipe) -> Any:
@@ -284,7 +249,6 @@ def render_still(scene: Any, filepath: Path) -> None:
 
 
 __all__ = [
-    "aim",
     "assign_material",
     "new_camera",
     "new_light",
@@ -293,7 +257,6 @@ __all__ = [
     "render_still",
     "reset_to_empty",
     "select_cycles_device",
-    "set_transform",
     "set_world",
     "set_world_matrix",
 ]

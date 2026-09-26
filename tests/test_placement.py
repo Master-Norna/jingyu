@@ -163,6 +163,49 @@ def test_rest_on_in_a_tilted_group_moves_straight_down() -> None:
     assert placement.meshes["bowl"].bounds()[0][2] == pytest.approx(0.05, abs=2e-3)
 
 
+def test_children_follow_an_object_parent_wherever_rest_on_puts_it() -> None:
+    scene = still_life()
+    orange = scene["objects"][3]
+    orange["parent"] = "bowl"
+    orange["location"] = [0.02, 0, 0.3]
+    scene["objects"][2]["location"] = [0, 0, 0.4]
+    placement = resolve_placement(validate_scene(scene).require_valid())
+    bowl, fruit = placement.world["bowl"], placement.world["orange"]
+    # The bowl dropped onto the table; the orange kept its place relative to the bowl
+    # (turned with the arrangement) and then settled onto the bowl's floor.
+    offset = apply(compose((0, 0, 0), (0, 0, 40), (1, 1, 1)), (0.02, 0, 0))
+    assert _close((fruit[3] - bowl[3], fruit[7] - bowl[7]), offset[:2], 1e-9)
+    assert 0.05 < placement.meshes["orange"].bounds()[0][2] < 0.07
+    assert placement.parent_world["orange"] == bowl
+    # Moving the bowl moves the orange with it.
+    scene["objects"][2]["location"] = [0.1, 0, 0.4]
+    moved = resolve_placement(validate_scene(scene).require_valid())
+    step = apply(compose((0, 0, 0), (0, 0, 40), (1, 1, 1)), (0.1, 0, 0))
+    assert _close(
+        (moved.world["orange"][3] - fruit[3], moved.world["orange"][7] - fruit[7]), step[:2], 1e-9
+    )
+
+
+def test_lights_and_cameras_can_ride_on_objects() -> None:
+    scene = still_life()
+    scene["lights"].append(
+        {"id": "lamp", "kind": "point", "parent": "top", "location": [0, 0, 0.5]}
+    )
+    placement = resolve_placement(validate_scene(scene).require_valid())
+    top = placement.world["top"]
+    lamp = placement.oriented["lamp"]
+    assert _close((lamp[3], lamp[7], lamp[11]), apply(top, (0, 0, 0.5)))
+
+
+def test_a_loop_through_parents_and_supports_fails() -> None:
+    scene = still_life()
+    scene["objects"][2]["parent"] = "orange"  # the bowl is carried by its own orange
+    result = validate_scene(scene)
+    assert any(i.code == "spec.placement_failed" and "cycle" in i.message for i in result.errors), (
+        result.issues
+    )
+
+
 def test_rest_on_with_nothing_below_fails() -> None:
     scene = still_life()
     scene["objects"][2]["location"] = [5, 5, 3]
@@ -190,9 +233,22 @@ def test_rest_on_cycles_fail() -> None:
             "/objects/2/parent",
         ),
         (
-            lambda s: s["objects"][2].update(parent="floor"),
+            lambda s: s["objects"][2].update(parent="sun"),
             "spec.unknown_reference",
             "/objects/2/parent",
+        ),
+        (
+            lambda s: s["objects"][2].update(parent="bowl"),
+            "spec.unknown_reference",
+            "/objects/2/parent",
+        ),
+        (
+            lambda s: (
+                s["objects"][1].update(parent="bowl"),
+                s["objects"][2].update(parent="top"),
+            ),
+            "spec.parent_cycle",
+            "/objects/1/parent",
         ),
         (
             lambda s: s["objects"][2].update(rest_on="bowl"),

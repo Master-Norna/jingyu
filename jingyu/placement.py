@@ -4,11 +4,15 @@ Standard library only: the host resolves placement to report problems before
 rendering, and the Blender worker resolves the same placement to build the
 scene, so both sides agree to the last digit.
 
-* A node's matrix is ``parent_world @ T @ R @ S``; groups chain the same way.
+* A node's matrix is ``parent_world @ T @ R @ S``.  A parent is a group or an
+  object; nodes are resolved parents first, so a child follows its parent
+  wherever ``rest_on`` put it (the oranges move with the bowl).
 * An object with ``rest_on`` keeps its world x and y, and moves vertically until
   its lowest points touch the topmost surface of the supporting object beneath
   it.  The vertical move is converted back into the object's local frame, so a
   rotated group still works.
+* Lights and cameras are aimed here too (``look_at`` or ``rotation``), so the
+  host can project and cast rays exactly as the renderer sees the scene.
 """
 
 from __future__ import annotations
@@ -20,7 +24,19 @@ from typing import Any
 from .errors import Issue, pointer_join
 from .geometry import GEOMETRY
 from .geometry.spatial import WorldMesh, rest_shift
-from .geometry.transform import IDENTITY, Mat4, Vec3, compose, multiply, solve_linear
+from .geometry.transform import (
+    IDENTITY,
+    Mat4,
+    Vec3,
+    apply,
+    compose,
+    look_rotation,
+    multiply,
+    rotation_part,
+    rotation_xyz,
+    solve_linear,
+    with_translation,
+)
 
 _UNIT_SCALE = (1.0, 1.0, 1.0)
 
@@ -34,6 +50,8 @@ class Placement:
     world: dict[str, Mat4] = field(default_factory=dict)
     #: World matrix of each node's parent (identity at the top level).
     parent_world: dict[str, Mat4] = field(default_factory=dict)
+    #: Lights and cameras after aiming: rotation only (no scale), looking along -Z.
+    oriented: dict[str, Mat4] = field(default_factory=dict)
     #: Local location of every object after ``rest_on`` is applied.
     locations: dict[str, Vec3] = field(default_factory=dict)
     #: Objects in world space, keyed by id.
@@ -44,120 +62,134 @@ class Placement:
 
 
 def resolve_placement(scene: Mapping[str, Any], *, build_meshes: bool = True) -> Placement:
-    """Resolve groups, parents and ``rest_on`` for a scene that passed semantic checks.
+    """Resolve parents, groups and ``rest_on`` for a scene that passed semantic checks.
 
-    Failures (a support with nothing under the object, a ``rest_on`` cycle) are
-    ``spec.placement_failed`` issues; the object then keeps its given location.
+    Failures (a support with nothing under the object, a loop through parents and
+    supports) are ``spec.placement_failed`` issues; the object then keeps its
+    given location.
     """
 
     placement = Placement()
-    groups = {g["id"]: g for g in scene.get("groups", [])}
-    for group_id in groups:
-        _group_world(group_id, groups, placement)
+    nodes: dict[str, tuple[str, int, Mapping[str, Any]]] = {}
+    for collection in ("groups", "objects"):
+        for index, entry in enumerate(scene.get(collection, [])):
+            nodes[entry["id"]] = (collection, index, entry)
+    need_mesh = {o.get("rest_on") for o in scene["objects"]} - {None}
 
-    objects = {o["id"]: (index, o) for index, o in enumerate(scene["objects"])}
-    for obj in scene["objects"]:
-        parent = _parent_matrix(obj, placement)
-        placement.parent_world[obj["id"]] = parent
-        location = tuple(float(v) for v in obj["location"])
-        placement.locations[obj["id"]] = (location[0], location[1], location[2])
-        placement.world[obj["id"]] = multiply(
-            parent, compose(obj["location"], obj["rotation"], obj["scale"])
-        )
-        if build_meshes or obj.get("rest_on") is not None or _supports_other(obj, scene):
-            mesh = GEOMETRY.run(obj["geometry"])
-            placement.meshes[obj["id"]] = WorldMesh.from_mesh(mesh, placement.world[obj["id"]])
-
-    unresolved: set[str] = set()
-    for obj_id in _rest_order(scene, objects, placement):
-        index, obj = objects[obj_id]
-        support = obj["rest_on"]
-        if support in unresolved:  # already reported for the support
-            unresolved.add(obj_id)
+    failed: set[str] = set()
+    for node_id in _order(nodes, placement):
+        collection, index, entry = nodes[node_id]
+        parent_id = entry.get("parent")
+        if parent_id in failed:
+            failed.add(node_id)  # the parent's problem is reported once, for the parent
+        parent = IDENTITY if parent_id is None else placement.world[parent_id]
+        placement.parent_world[node_id] = parent
+        if collection == "groups":
+            scale = float(entry["scale"])
+            placement.world[node_id] = multiply(
+                parent, compose(entry["location"], entry["rotation"], (scale, scale, scale))
+            )
             continue
-        shift = rest_shift(placement.meshes[obj_id], placement.meshes[support])
+        x, y, z = (float(v) for v in entry["location"])
+        placement.locations[node_id] = (x, y, z)
+        placement.world[node_id] = multiply(
+            parent, compose(entry["location"], entry["rotation"], entry["scale"])
+        )
+        support = entry.get("rest_on")
+        if build_meshes or support is not None or node_id in need_mesh:
+            mesh = GEOMETRY.run(entry["geometry"])
+            placement.meshes[node_id] = WorldMesh.from_mesh(mesh, placement.world[node_id])
+        if support is None or node_id in failed:
+            continue
+        if support in failed:
+            failed.add(node_id)
+            continue
+        shift = rest_shift(placement.meshes[node_id], placement.meshes[support])
         if shift is None:
-            unresolved.add(obj_id)
+            failed.add(node_id)
             placement.issues.append(
                 Issue(
                     "spec.placement_failed",
-                    f"{obj_id!r} cannot rest on {support!r}: no part of {support!r} is "
+                    f"{node_id!r} cannot rest on {support!r}: no part of {support!r} is "
                     f"directly below it",
                     pointer_join("objects", index, "rest_on"),
-                    hint=f"move {obj_id!r} in x or y so it is above {support!r}",
+                    hint=f"move {node_id!r} in x or y so it is above {support!r}",
                 )
             )
             continue
-        _move_vertically(obj_id, shift, placement)
-        placement.rested[obj_id] = support
+        _move_vertically(node_id, shift, placement)
+        placement.rested[node_id] = support
 
     for collection in ("lights", "cameras"):
         for entry in scene[collection]:
-            parent = _parent_matrix(entry, placement)
+            parent_id = entry.get("parent")
+            parent = placement.world.get(parent_id, IDENTITY) if parent_id else IDENTITY
             placement.parent_world[entry["id"]] = parent
             rotation = entry.get("rotation", (0.0, 0.0, 0.0))
             placement.world[entry["id"]] = multiply(
                 parent, compose(entry["location"], rotation, _UNIT_SCALE)
             )
+            placement.oriented[entry["id"]] = aim_matrix(
+                entry["location"], entry.get("look_at"), entry.get("rotation"), parent
+            )
     return placement
 
 
-def _group_world(group_id: str, groups: Mapping[str, Any], placement: Placement) -> Mat4:
-    if group_id in placement.world:
-        return placement.world[group_id]
-    group = groups[group_id]
-    parent_id = group.get("parent")
-    parent = IDENTITY if parent_id is None else _group_world(parent_id, groups, placement)
-    placement.parent_world[group_id] = parent
-    scale = float(group["scale"])
-    world = multiply(parent, compose(group["location"], group["rotation"], (scale, scale, scale)))
-    placement.world[group_id] = world
-    return world
+def aim_matrix(
+    location: Any, look_at: Any | None, rotation_deg: Any | None, parent: Mat4 = IDENTITY
+) -> Mat4:
+    """World matrix of a light or camera: *location* and *rotation_deg* are relative to
+    *parent*; *look_at* is a world-space point.  Parent scale does not reach it."""
+
+    position = apply(parent, location)
+    if look_at is not None:
+        target = tuple(float(v) for v in look_at)
+        direction = tuple(t - p for t, p in zip(target, position, strict=True))
+        return with_translation(look_rotation(direction), position)
+    local = rotation_xyz(rotation_deg if rotation_deg is not None else (0.0, 0.0, 0.0))
+    return with_translation(multiply(rotation_part(parent), local), position)
 
 
-def _parent_matrix(entry: Mapping[str, Any], placement: Placement) -> Mat4:
-    parent_id = entry.get("parent")
-    return IDENTITY if parent_id is None else placement.world[parent_id]
-
-
-def _supports_other(obj: Mapping[str, Any], scene: Mapping[str, Any]) -> bool:
-    return any(other.get("rest_on") == obj["id"] for other in scene["objects"])
-
-
-def _rest_order(
-    scene: Mapping[str, Any],
-    objects: Mapping[str, tuple[int, Mapping[str, Any]]],
-    placement: Placement,
+def _order(
+    nodes: Mapping[str, tuple[str, int, Mapping[str, Any]]], placement: Placement
 ) -> list[str]:
-    """Objects with ``rest_on``, supports first; cycles become issues."""
+    """Groups and objects with every parent and support before the nodes that need it.
+
+    A node on a loop (through parents, supports or both) is reported once and left
+    out, together with everything that depends on it.
+    """
 
     order: list[str] = []
     state: dict[str, str] = {}
 
-    def visit(obj_id: str) -> bool:
-        if state.get(obj_id) == "done":
+    def needs(node_id: str) -> list[str]:
+        entry = nodes[node_id][2]
+        found = [entry.get("parent"), entry.get("rest_on")]
+        return [n for n in found if isinstance(n, str) and n in nodes]
+
+    def visit(node_id: str) -> bool:
+        if state.get(node_id) == "done":
             return True
-        if state.get(obj_id) in ("visiting", "failed"):
+        if state.get(node_id) in ("visiting", "failed"):
             return False
-        state[obj_id] = "visiting"
-        support = objects[obj_id][1].get("rest_on")
-        ok = support is None or visit(support)
-        state[obj_id] = "done" if ok else "failed"
-        if ok and support is not None:
-            order.append(obj_id)
+        state[node_id] = "visiting"
+        ok = all(visit(other) for other in needs(node_id))
+        state[node_id] = "done" if ok else "failed"
+        if ok:
+            order.append(node_id)
         return ok
 
-    for obj in scene["objects"]:
-        if obj.get("rest_on") is None or state.get(obj["id"]) in ("done", "failed"):
+    for node_id, (collection, index, entry) in nodes.items():
+        if state.get(node_id) in ("done", "failed"):
             continue
-        if not visit(obj["id"]):
-            index = objects[obj["id"]][0]
+        if not visit(node_id):
+            field_name = "rest_on" if entry.get("rest_on") is not None else "parent"
             placement.issues.append(
                 Issue(
                     "spec.placement_failed",
-                    f"rest_on of {obj['id']!r} leads into a cycle: objects cannot support "
-                    "each other in a loop",
-                    pointer_join("objects", index, "rest_on"),
+                    f"{field_name} of {node_id!r} leads into a cycle: things cannot hold or "
+                    "carry each other in a loop",
+                    pointer_join(collection, index, field_name),
                 )
             )
     return order
@@ -174,4 +206,4 @@ def _move_vertically(obj_id: str, shift: float, placement: Placement) -> None:
     placement.meshes[obj_id] = placement.meshes[obj_id].translated((0.0, 0.0, shift))
 
 
-__all__ = ["Placement", "resolve_placement"]
+__all__ = ["Placement", "aim_matrix", "resolve_placement"]

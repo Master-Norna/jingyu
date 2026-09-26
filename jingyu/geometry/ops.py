@@ -14,7 +14,7 @@ from ..errors import JingyuError
 from ..generator import GeneratorDef, ParamProblem, integer, number
 from .curves import linspace, smooth_monotone
 from .lathe import Point2, close_solid, revolve, shell
-from .mesh import MeshData
+from .mesh import MeshData, Portal
 
 _SEGMENTS = integer(
     "Number of segments around the axis; more is smoother and heavier.",
@@ -382,7 +382,16 @@ def _wall(p: Mapping[str, Any]) -> MeshData:
                 faces.append((f00, b00, b10, f10))
             if not filled(i, j + 1):
                 faces.append((f01, f11, b11, b01))
-    return MeshData(tuple(vertices), tuple(faces), smooth=False)
+    portals = tuple(
+        Portal(
+            f"openings/{n}",
+            ((x0 + x1) / 2.0, 0.0, (z0 + z1) / 2.0),
+            ((x1 - x0) / 2.0, 0.0, 0.0),
+            (0.0, 0.0, (z1 - z0) / 2.0),
+        )
+        for n, (x0, x1, z0, z1) in enumerate(holes)
+    )
+    return MeshData(tuple(vertices), tuple(faces), smooth=False, portals=portals)
 
 
 def _check_wall(p: Mapping[str, Any]) -> list[ParamProblem]:

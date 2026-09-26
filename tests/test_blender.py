@@ -238,3 +238,62 @@ def test_light_pass_finds_shadows(rendered: RenderOutcome) -> None:
     assert ("vase", "floor") in shadows
     # The vase's side toward the lamp is lit; the floor far behind it is not all lit.
     assert 0.0 < lights.document["objects"]["floor"]["lit_fraction"][key["id"]] < 1.0
+
+
+_MARKERS = [(-0.4, 0.3, 0.1), (0.35, -0.2, 0.0), (0.0, 0.5, 0.45), (0.25, 0.25, 0.2)]
+
+
+@pytest.mark.parametrize(
+    "camera",
+    [
+        {
+            "location": [1.4, -1.6, 0.9],
+            "look_at": [0.1, 0.1, 0.1],
+            "lens_mm": 35,
+            "shift": [0.1, -0.05],
+        },
+        {"location": [0.2, -0.1, 2.4], "look_at": [0.2, -0.1, 0.0], "lens_mm": 28},
+        {"location": [0.5, -2.0, 0.6], "rotation": [80, 0, 10], "parent": "rig"},
+        {
+            "location": [0.0, -3.0, 1.2],
+            "look_at": [0.0, 0.0, 0.2],
+            "projection": "orthographic",
+            "ortho_scale": 1.8,
+        },
+    ],
+    ids=["look-at-shifted", "straight-down", "rotated-in-a-group", "orthographic"],
+)
+def test_host_projection_matches_the_render(
+    runtime: BlenderRuntime, tmp_path: Path, camera: dict[str, object]
+) -> None:
+    """Where the host camera model puts a point is where Blender draws it."""
+
+    from jingyu.camera import CameraModel
+    from jingyu.scene import validate_scene
+
+    radius = 0.02
+    scene = {
+        "schema": "jingyu.scene.v1",
+        "id": "markers",
+        "world": {"color": "#808080"},
+        "groups": [{"id": "rig", "location": [0.1, 0.0, 0.1], "rotation": [0, 0, 15]}],
+        "objects": [
+            {"id": f"m{i}", "geometry": {"op": "sphere", "radius": radius}, "location": list(p)}
+            for i, p in enumerate(_MARKERS)
+        ],
+        "cameras": [{"id": "cam", **camera}],
+        "render": {"camera": "cam", "resolution": [320, 240], "samples": 1},
+    }
+    workspace = Workspace.at(tmp_path / "workspace")
+    outcome = render_scene(workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S)
+    layout = {o["object"]: o for o in IdMask.load(outcome.candidate).layout()["objects"]}
+    result = validate_scene(scene)
+    normalized = result.require_valid()
+    model = CameraModel.from_scene(normalized, result.placement)
+    for i, (x, y, z) in enumerate(_MARKERS):
+        projected = model.project((x, y, z + radius))
+        assert projected is not None
+        u, v, _ = projected
+        seen = layout[f"m{i}"]["centroid_uv"]
+        assert abs(seen["u"] - u) * 320 < 1.2, (i, seen, (u, v))
+        assert abs(seen["v"] - v) * 240 < 1.2, (i, seen, (u, v))

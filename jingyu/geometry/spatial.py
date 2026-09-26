@@ -12,8 +12,9 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
-from .mesh import MeshData
+from .mesh import MeshData, Portal
 from .transform import Mat4, Vec3, apply_all
 
 #: Queries are nudged by these offsets so a line through a shared edge or vertex
@@ -106,16 +107,26 @@ class WorldMesh:
     vertices: list[Vec3]
     triangles: list[tuple[int, int, int]]
     source: MeshData
+    #: The source face each triangle was cut from.
+    triangle_faces: list[int] = field(default_factory=list, repr=False)
+    #: The mesh's openings (windows, doors) in world space.
+    portals: tuple[Portal, ...] = ()
+    #: Bounding volume hierarchy for arbitrary rays (jingyu.geometry.raycast).
+    bvh: Any = field(default=None, repr=False)
     _indices: dict[int, AxisIndex] = field(default_factory=dict, repr=False)
     _closed: bool | None = field(default=None, repr=False)
     _bounds: tuple[Vec3, Vec3] | None = field(default=None, repr=False)
 
     @classmethod
     def from_mesh(cls, mesh: MeshData, matrix: Mat4) -> WorldMesh:
-        triangles = [
-            (face[0], face[i], face[i + 1]) for face in mesh.faces for i in range(1, len(face) - 1)
-        ]
-        return cls(apply_all(matrix, mesh.vertices), triangles, mesh)
+        triangles: list[tuple[int, int, int]] = []
+        faces: list[int] = []
+        for index, face in enumerate(mesh.faces):
+            for i in range(1, len(face) - 1):
+                triangles.append((face[0], face[i], face[i + 1]))
+                faces.append(index)
+        portals = tuple(portal.transformed(matrix) for portal in mesh.portals)
+        return cls(apply_all(matrix, mesh.vertices), triangles, mesh, faces, portals)
 
     @property
     def closed(self) -> bool:
@@ -126,7 +137,10 @@ class WorldMesh:
     def translated(self, offset: Sequence[float]) -> WorldMesh:
         dx, dy, dz = (float(o) for o in offset)
         moved = [(x + dx, y + dy, z + dz) for x, y, z in self.vertices]
-        return WorldMesh(moved, self.triangles, self.source, _closed=self._closed)
+        portals = tuple(p.moved((dx, dy, dz)) for p in self.portals)
+        return WorldMesh(
+            moved, self.triangles, self.source, self.triangle_faces, portals, _closed=self._closed
+        )
 
     def index(self, axis: int) -> AxisIndex:
         if axis not in self._indices:

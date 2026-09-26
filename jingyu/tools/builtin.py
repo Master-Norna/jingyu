@@ -24,6 +24,7 @@ from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
 from ..scene.diff import diff_scenes
 from ..scene.patch import OPS as PATCH_OPS
 from ..scene.patch import apply_patch
+from ..sightlines import background_openings
 from ..views import VIEWS, render_view
 from .registry import ImagePayload, Tool, ToolContext, ToolRegistry, ToolResult
 
@@ -390,12 +391,24 @@ def _locate(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             _add_colors(result, mask, image, box, scene)
             if lights is not None:
                 result["light"] = lights.at_uv(p["u"], p["v"])
+            if result["background"]:
+                result["seen_through"] = background_openings(
+                    scene, mask.width, mask.height, [(p["x"], p["y"])]
+                )
         else:
             result = mask.locate_region(args["region"])
             mode = "region"
             r = result["region"]
             box = Box(r["x0"], r["y0"], r["x1"], r["y1"])
             _add_colors(result, mask, image, box, scene)
+            background = mask.background_pixels(box)
+            if background:
+                result["background"] = {
+                    "pointer": "/world",
+                    "pixels": len(background),
+                    "fraction_of_region": len(background) / box.area,
+                    "seen_through": background_openings(scene, mask.width, mask.height, background),
+                }
             if lights is not None:
                 result["light"] = lights.in_region(
                     r["x0"] / mask.width,
@@ -783,7 +796,8 @@ REGISTRY.add(
             "JSON Pointers to edit, from the candidate's exact id mask. Also returns the "
             "colour actually rendered there beside the material's own colour (so drift from "
             "warm light or the view transform is visible) and which lights reach the spot "
-            "directly."
+            "directly. Where the image shows the world behind everything (sky, ground), it "
+            "says so, and names the opening (a window in a wall) the eye looks through."
         ),
         input_schema=_input(
             {
