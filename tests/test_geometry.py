@@ -10,7 +10,7 @@ import pytest
 from jingyu.errors import JingyuError
 from jingyu.generator import GeneratorDef
 from jingyu.geometry import GEOMETRY, MeshData
-from jingyu.geometry.curves import linspace, pchip
+from jingyu.geometry.curves import linspace, pchip, smooth_monotone
 from jingyu.geometry.lathe import close_solid, revolve, shell
 from jingyu.geometry.ops import vessel_profile
 
@@ -268,6 +268,52 @@ def test_pchip_interpolates_control_points_and_clamps_outside() -> None:
     assert pchip(xs, ys, [-1.0, 4.0]) == [1.0, 2.0]
     # No overshoot between a local maximum and its neighbours.
     assert max(pchip(xs, ys, linspace(0.0, 3.0, 301))) <= 3.0 + 1e-12
+
+
+def _second_differences(f: Any, x: float, step: float = 1e-5) -> tuple[float, float]:
+    """Second derivative just left and just right of *x*."""
+
+    def d2(c: float) -> float:
+        a, b, e = f([c - step, c, c + step])
+        return float((a - 2 * b + e) / step**2)
+
+    return d2(x - 2 * step), d2(x + 2 * step)
+
+
+def test_smooth_monotone_keeps_curvature_continuous_at_control_points() -> None:
+    # A vessel profile: base, belly (maximum), neck (minimum), lip.
+    xs, ys = [0.0, 0.072, 0.1408, 0.16], [0.06, 0.092, 0.062, 0.066]
+
+    def smooth(samples: list[float]) -> list[float]:
+        return smooth_monotone(xs, ys, samples)
+
+    def cubic(samples: list[float]) -> list[float]:
+        return pchip(xs, ys, samples)
+
+    before, after = _second_differences(cubic, xs[1])
+    assert abs(after - before) > 0.5 * abs(before)  # the cubic's curvature jumps here
+    before, after = _second_differences(smooth, xs[1])
+    assert after == pytest.approx(before, rel=0.05)
+
+
+@pytest.mark.parametrize(
+    "ys",
+    [
+        [0.0, 0.1, 2.0, 2.05, 7.0],
+        [1.0, 3.0, 2.0, 2.0, 5.0],
+        [0.05, 0.09, 0.02, 0.03, 0.0],
+    ],
+)
+def test_smooth_monotone_stays_within_its_control_points(ys: list[float]) -> None:
+    xs = [0.0, 1.0, 1.5, 4.0, 5.0]
+    assert smooth_monotone(xs, ys, xs) == pytest.approx(ys)
+    samples = linspace(0.0, 5.0, 2001)
+    values = smooth_monotone(xs, ys, samples)
+    for (x0, y0), (x1, y1) in pairwise(zip(xs, ys, strict=True)):
+        segment = [v for x, v in zip(samples, values, strict=True) if x0 <= x <= x1]
+        assert min(y0, y1) - 1e-9 <= min(segment) and max(segment) <= max(y0, y1) + 1e-9
+        rising = y1 >= y0
+        assert all((b >= a - 1e-9) if rising else (b <= a + 1e-9) for a, b in pairwise(segment))
 
 
 def test_pchip_with_two_points_is_linear() -> None:

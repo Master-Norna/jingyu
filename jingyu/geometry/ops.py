@@ -12,7 +12,7 @@ from typing import Any
 
 from ..errors import JingyuError
 from ..generator import GeneratorDef, ParamProblem, integer, number
-from .curves import linspace, pchip
+from .curves import linspace, smooth_monotone
 from .lathe import Point2, close_solid, revolve, shell
 from .mesh import MeshData
 
@@ -211,13 +211,13 @@ LATHE = GeneratorDef[MeshData](
 
 
 def vessel_profile(p: Mapping[str, Any]) -> list[Point2]:
-    """The outer wall of a vessel: a monotone spline through four control rings."""
+    """The outer wall of a vessel: a smooth monotone curve through four control rings."""
 
     h = float(p["height"])
     zs = [0.0, float(p["belly_at"]) * h, float(p["neck_at"]) * h, h]
     rs = [float(p[k]) for k in ("base_radius", "belly_radius", "neck_radius", "lip_radius")]
     samples = linspace(0.0, h, int(p["profile_samples"]))
-    radii = pchip(zs, rs, samples)
+    radii = smooth_monotone(zs, rs, samples)
     return list(zip(radii, samples, strict=True))
 
 
