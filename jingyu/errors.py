@@ -34,6 +34,7 @@ ERROR_CODES: dict[str, str] = {
     "spec.parent_cycle": "Groups are nested inside themselves.",
     "spec.placement_failed": "rest_on cannot be resolved: nothing below, or supports loop.",
     "spec.invalid": "The scene has validation errors; see details.issues.",
+    "patch.failed": "A scene edit operation could not be applied; nothing was changed.",
     "spec.scene_unlit": "Warning: nothing lights the scene, the image will be black.",
     "spec.empty_scene": "Warning: the scene has no visible objects.",
     "physics.intersection": "Warning: one object sinks into another by more than 1 mm.",

@@ -174,3 +174,37 @@ def test_gpu_engines_render(runtime: BlenderRuntime, tmp_path: Path, engine: str
         assert image.size == PREVIEW_SIZE
     # The id mask pass always renders with Cycles, so it is exact for every engine.
     assert IdMask.load(candidate).layout()["unassigned_pixels"] == 0
+
+
+def test_daylight_groups_and_rest_on_render(runtime: BlenderRuntime, tmp_path: Path) -> None:
+    """The worker builds the placement the host resolved, lit by a daylight environment."""
+
+    from test_placement import still_life
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    scene = still_life()
+    scene["world"] = {"environment": {"family": "daylight", "sun_elevation": 20}}
+    scene["lights"] = [
+        {
+            "id": "window",
+            "kind": "area",
+            "location": [0, -1, 1.5],
+            "look_at": [0, 0, 0],
+            "size": 1.0,
+            "size_y": 0.4,
+            "temperature_k": 5600,
+            "parent": "arrangement",
+        }
+    ]
+    scene["cameras"] = [
+        {"id": "cam", "location": [0.9, -0.9, 0.7], "look_at": [0.2, 0.1, 0.08], "lens_mm": 50}
+    ]
+    scene["render"]["resolution"] = [320, 240]
+    outcome = render_scene(workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S)
+    candidate = outcome.candidate
+    assert CandidateStore(workspace).verify(candidate) == []
+    layout = IdMask.load(candidate).layout()
+    # Given at z = 9, the orange only shows up if rest_on put it in the bowl.
+    assert layout["not_in_frame"] == []
+    assert {o["object"] for o in layout["objects"]} >= {"top", "bowl", "orange"}
+    assert "frame.underexposed" not in {w.code for w in outcome.warnings}

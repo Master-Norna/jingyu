@@ -8,7 +8,7 @@ from typing import Any
 from .. import __version__, conventions
 from .. import constitution as constitution_mod
 from ..candidate import CandidateStore
-from ..canonical_json import load_file_strict
+from ..canonical_json import load_file_strict, pretty_bytes
 from ..doctor import diagnose
 from ..environments import ENVIRONMENTS
 from ..errors import ERROR_CODES, JingyuError
@@ -17,6 +17,9 @@ from ..locate import IdMask
 from ..materials import MATERIALS
 from ..render import render_scene
 from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
+from ..scene.diff import diff_scenes
+from ..scene.patch import OPS as PATCH_OPS
+from ..scene.patch import apply_patch
 from ..views import VIEWS, render_view
 from .registry import ImagePayload, Tool, ToolContext, ToolRegistry, ToolResult
 
@@ -46,8 +49,16 @@ _SCENE_SOURCE_PROPS: dict[str, Any] = {
         "type": "string",
         "description": "Path of a scene JSON file inside the workspace.",
     },
+    "from_candidate": {
+        "type": "string",
+        "description": "Id of a candidate whose scene to use (the scene it was rendered from).",
+    },
 }
-_SCENE_SOURCE_ONE_OF = [{"required": ["scene"]}, {"required": ["scene_path"]}]
+_SCENE_SOURCE_ONE_OF = [
+    {"required": ["scene"]},
+    {"required": ["scene_path"]},
+    {"required": ["from_candidate"]},
+]
 _CANDIDATE_SUMMARY = {
     "type": "object",
     "required": ["candidate_id", "created_at", "scene_id", "scene_sha256", "quality", "engine"],
@@ -87,6 +98,8 @@ def _output(properties: dict[str, Any], required: list[str]) -> dict[str, Any]:
 def _load_scene(ctx: ToolContext, args: dict[str, Any]) -> Any:
     if "scene" in args:
         return copy.deepcopy(args["scene"])
+    if "from_candidate" in args:
+        return _store(ctx).open(args["from_candidate"]).scene()
     path = ctx.workspace.resolve(args["scene_path"])
     try:
         return load_file_strict(path)
@@ -120,22 +133,37 @@ def _store(ctx: ToolContext) -> CandidateStore:
 # ------------------------------------------------------------------ handlers
 
 GUIDE_WORKFLOW = [
-    "Read the conventions below and the primitive catalogue (list_generators). Shapes are "
-    "geometry operators with parameters, surfaces are material families with parameters; "
-    "a new object is a new parameter line, never a new file.",
-    "Write a scene description (schema jingyu.scene.v1, see get_scene_schema) and run "
-    "validate_scene until it is valid. Issues carry JSON Pointers and hints.",
-    "render_scene with quality 'preview' first. Every render is a new immutable candidate; "
-    "never edit candidate files, change the scene and render again.",
-    "Review the whole before the parts (constitution J1): view_candidate with glance, "
-    "squint, grayscale or values, and flip; compare with the previous candidate; "
-    "describe_layout shows how objects are distributed in the frame.",
-    "If something looks wrong but you cannot name it, point at it: locate_in_candidate "
-    "returns the object, material and the JSON Pointers to edit.",
-    "To test whether an element earns its place, render again with hide=[its id] and "
-    "compare (subtraction review, J7.1 four).",
-    "get_constitution returns the index or a few clauses; use clauses to ask questions, "
-    "not as reasons. Render 'final' once the preview holds.",
+    "Start from the picture, not the numbers: write the scene's intent as one sentence "
+    "about what a viewer must see or feel (e.g. 'low morning sun rakes across the table "
+    "from the left window; the fruit glows, the far wall stays cool'). Every review "
+    "compares the render with this sentence.",
+    "Read the conventions and the primitive catalogue (list_generators): shapes are "
+    "geometry operators, surfaces are material families, and the light around the scene "
+    "is an environment family. Any scene with sun, sky or windows uses the daylight "
+    "environment (sun elevation, azimuth, clouds, haze); do not imitate the sun with "
+    "lamps. Add lamps only for light the environment cannot give.",
+    "Describe relations, not coordinates: put things that belong together in a group "
+    "and move the group; give every object that sits on something rest_on (its height "
+    "is then computed); cut windows and doors into a wall with openings.",
+    "validate_scene until it is valid. Treat physics warnings (an object sinking into "
+    "another or hovering) as mistakes unless the picture needs them.",
+    "render_scene with quality 'preview'. Read the warnings on the result: frame.* "
+    "warnings say an object is out of frame or the exposure is off.",
+    "Look before you measure: view the image (glance, then squint or values), and write "
+    "one sentence saying what it actually shows. Compare it with the intent and name "
+    "the biggest gap (light, silhouette, space, colour). describe_layout and "
+    "locate_in_candidate help find where to change; they do not decide whether the "
+    "picture works.",
+    "When you cannot say why it fails, get_constitution and ask its questions of the "
+    "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
+    "feeling); clauses are questions, not reasons to accept.",
+    "Change one idea per iteration with edit_scene: start from_candidate (the last "
+    "render), address elements by @id (/objects/@bowl/location, "
+    "/world/environment/sun_elevation) and save_as a file. Then render and check with "
+    "diff_candidates that the change did what you meant.",
+    "To test whether an element earns its place, render with hide=[its id] and compare "
+    "(subtraction review). Stop when your sentence about the image matches the intent, "
+    "then render 'final' once.",
 ]
 
 
@@ -219,6 +247,68 @@ def _render_scene(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         },
         images,
     )
+
+
+def _edit_scene(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    edited = apply_patch(_load_scene(ctx, args), args["operations"])
+    result = validate_scene(edited)
+    data: dict[str, Any] = {
+        "valid": result.valid,
+        "issues": [i.to_dict() for i in result.issues],
+        "scene_sha256": result.scene_sha256,
+        "scene": edited,
+    }
+    save_as = args.get("save_as")
+    if save_as is not None:
+        target = ctx.workspace.resolve(save_as, must_exist=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(pretty_bytes(edited))
+        data["saved_to"] = ctx.workspace.relative(target)
+    return ToolResult(data)
+
+
+def _diff_candidates(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    store = _store(ctx)
+    before = store.open(args["candidate_id"])
+    after = store.open(args["other_candidate_id"])
+    data: dict[str, Any] = {
+        "candidate_id": before.id,
+        "other_candidate_id": after.id,
+        "scene_changes": diff_scenes(before.scene(), after.scene()),
+    }
+    if before.has_id_mask and after.has_id_mask:
+        data["layout_changes"] = _layout_changes(
+            IdMask.load(before).layout(), IdMask.load(after).layout()
+        )
+    return ToolResult(data)
+
+
+def _layout_changes(before: dict[str, Any], after: dict[str, Any]) -> list[dict[str, Any]]:
+    """Per object: change in frame area and centroid, and appearing or vanishing."""
+
+    left = {o["object"]: o for o in before["objects"]}
+    right = {o["object"]: o for o in after["objects"]}
+    rows = []
+    for name in list(left) + [n for n in right if n not in left]:
+        a, b = left.get(name), right.get(name)
+        row: dict[str, Any] = {"object": name}
+        if a is None or b is None:
+            row["change"] = "appeared" if a is None else "vanished"
+        else:
+            row["change"] = "moved"
+            row["area_fraction"] = {"before": a["area_fraction"], "after": b["area_fraction"]}
+            row["centroid_shift_uv"] = {
+                "du": b["centroid_uv"]["u"] - a["centroid_uv"]["u"],
+                "dv": b["centroid_uv"]["v"] - a["centroid_uv"]["v"],
+            }
+            if (
+                abs(row["centroid_shift_uv"]["du"]) < 0.005
+                and abs(row["centroid_shift_uv"]["dv"]) < 0.005
+                and abs(b["area_fraction"] - a["area_fraction"]) < 0.001
+            ):
+                continue
+        rows.append(row)
+    return rows
 
 
 def _list_candidates(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -418,6 +508,60 @@ REGISTRY.add(
 )
 REGISTRY.add(
     Tool(
+        name="edit_scene",
+        title="Edit a scene by operations",
+        description=(
+            "Change a scene without rewriting it: JSON Patch operations (add, remove, "
+            "replace, move, copy, test) plus merge (merge an object into the value at "
+            "path). A path segment @<id> selects an array element by id, e.g. "
+            "/objects/@bowl/location or /groups/@still_life/location. Returns the edited "
+            "scene with validation issues; save_as writes it to a workspace file. To move "
+            "several things together, give them a group and edit the group."
+        ),
+        input_schema=_input(
+            {
+                **_SCENE_SOURCE_PROPS,
+                "operations": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                        "type": "object",
+                        "required": ["op", "path"],
+                        "properties": {
+                            "op": {"enum": list(PATCH_OPS)},
+                            "path": _STRING,
+                            "from": _STRING,
+                            "value": {},
+                        },
+                        "additionalProperties": False,
+                    },
+                },
+                "save_as": {
+                    "type": "string",
+                    "description": "Workspace path to write the edited scene to.",
+                },
+            },
+            ["operations"],
+            oneOf=_SCENE_SOURCE_ONE_OF,
+        ),
+        output_schema=_output(
+            {
+                "valid": {"type": "boolean"},
+                "issues": {"type": "array", "items": _ISSUE},
+                "scene_sha256": {"type": ["string", "null"]},
+                "scene": _ANY_OBJECT,
+                "saved_to": _STRING,
+            },
+            ["valid", "issues", "scene_sha256", "scene"],
+        ),
+        handler=_edit_scene,
+        read_only=False,
+        idempotent=True,
+    )
+)
+REGISTRY.add(
+    Tool(
         name="render_scene",
         title="Render a scene",
         description=(
@@ -589,6 +733,31 @@ REGISTRY.add(
             {"candidate_id": _STRING, "layout": _ANY_OBJECT}, ["candidate_id", "layout"]
         ),
         handler=_describe_layout,
+    )
+)
+REGISTRY.add(
+    Tool(
+        name="diff_candidates",
+        title="What changed between two candidates",
+        description=(
+            "Scene changes from candidate_id to other_candidate_id (paths with @<id>, "
+            "ready to reuse in edit_scene) and how each object's place and size in the "
+            "frame moved."
+        ),
+        input_schema=_input(
+            {"candidate_id": _CANDIDATE_ID, "other_candidate_id": _CANDIDATE_ID},
+            ["candidate_id", "other_candidate_id"],
+        ),
+        output_schema=_output(
+            {
+                "candidate_id": _STRING,
+                "other_candidate_id": _STRING,
+                "scene_changes": {"type": "array"},
+                "layout_changes": {"type": "array"},
+            },
+            ["candidate_id", "other_candidate_id", "scene_changes"],
+        ),
+        handler=_diff_candidates,
     )
 )
 REGISTRY.add(

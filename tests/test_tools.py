@@ -63,9 +63,9 @@ def test_tool_names_are_unique_snake_case() -> None:
     assert [t.name for t in REGISTRY] == names
 
 
-def test_only_render_scene_writes() -> None:
+def test_only_render_and_edit_write() -> None:
     writers = [t.name for t in REGISTRY if not t.read_only]
-    assert writers == ["render_scene"]
+    assert writers == ["edit_scene", "render_scene"]
     assert not any(t.destructive for t in REGISTRY)
     assert {t.name for t in REGISTRY if t.returns_images} == {"render_scene", "view_candidate"}
 
@@ -344,3 +344,89 @@ def test_render_scene_rejects_hiding_unknown_objects(ctx: ToolContext) -> None:
     assert info.value.code == "spec.unknown_reference"
     assert "unicorn" in info.value.message
     assert not ctx.workspace.candidates_dir.exists()
+
+
+# ------------------------------------------------------- editing and comparing
+
+
+def test_edit_scene_from_a_candidate_and_save(
+    ctx: ToolContext, make_candidate: CandidateFactory
+) -> None:
+    candidate = make_candidate()
+    data = _invoke(
+        ctx,
+        "edit_scene",
+        {
+            "from_candidate": candidate.id,
+            "operations": [
+                {"op": "replace", "path": "/objects/@crate/location/0", "value": -0.4},
+                {"op": "add", "path": "/intent", "value": "a vase beside a crate"},
+            ],
+            "save_as": "scenes/edited.json",
+        },
+    ).data
+    assert data["valid"] is True
+    assert data["saved_to"] == "scenes/edited.json"
+    saved = json.loads((ctx.workspace.root / "scenes" / "edited.json").read_text("utf-8"))
+    assert saved == data["scene"]
+    assert saved["objects"][2]["location"][0] == -0.4
+    # The edited file is a scene source for the next edit.
+    again = _invoke(
+        ctx,
+        "edit_scene",
+        {
+            "scene_path": "scenes/edited.json",
+            "operations": [{"op": "test", "path": "/intent", "value": "a vase beside a crate"}],
+        },
+    ).data
+    assert again["scene"] == saved
+
+
+def test_edit_scene_reports_validation_issues_and_patch_failures(ctx: ToolContext) -> None:
+    data = _invoke(
+        ctx,
+        "edit_scene",
+        {
+            "scene": minimal_scene(),
+            "operations": [{"op": "add", "path": "/objects/@vase/rest_on", "value": "nope"}],
+        },
+    ).data
+    assert data["valid"] is False
+    assert data["issues"][0]["code"] == "spec.unknown_reference"
+    code = _code(
+        ctx,
+        "edit_scene",
+        {"scene": minimal_scene(), "operations": [{"op": "remove", "path": "/objects/@nope"}]},
+    )
+    assert code == "patch.failed"
+    assert (
+        _code(
+            ctx,
+            "edit_scene",
+            {
+                "scene": minimal_scene(),
+                "operations": [{"op": "add", "path": "/id", "value": "x"}],
+                "save_as": "../outside.json",
+            },
+        )
+        == "workspace.path_escape"
+    )
+
+
+def test_diff_candidates_reports_scene_and_layout_changes(
+    ctx: ToolContext, make_candidate: CandidateFactory
+) -> None:
+    first, second = make_candidate(), make_candidate(width=320, height=240)
+    data = _invoke(
+        ctx, "diff_candidates", {"candidate_id": first.id, "other_candidate_id": second.id}
+    ).data
+    assert data["scene_changes"] == [
+        {
+            "path": "/render/resolution",
+            "change": "changed",
+            "before": first.scene()["render"]["resolution"],
+            "after": [320, 240],
+        }
+    ]
+    # The synthetic masks scale with the image, so nothing moved in the frame.
+    assert data["layout_changes"] == []

@@ -288,3 +288,41 @@ def test_linspace_hits_both_ends_exactly() -> None:
     assert values[0] == 0.0 and values[-1] == 0.3
     with pytest.raises(ValueError):
         linspace(0.0, 1.0, 1)
+
+
+def test_wall_with_openings_is_a_closed_solid_with_the_right_volume() -> None:
+    params = {
+        "op": "wall",
+        "size": [4.0, 0.15, 2.6],
+        "openings": [
+            {"x": -0.6, "sill": 0.9, "width": 1.2, "height": 1.3},
+            {"x": 1.2, "sill": 0.0, "width": 0.9, "height": 2.1},
+        ],
+    }
+    mesh = GEOMETRY.run(params)
+    assert mesh.is_closed_manifold()
+    solid = 4.0 * 2.6 - 1.2 * 1.3 - 0.9 * 2.1
+    assert math.isclose(mesh.signed_volume(), solid * 0.15, rel_tol=1e-9)
+    assert mesh.bounds() == ((-2.0, -0.075, 0.0), (2.0, 0.075, 2.6))
+
+
+@pytest.mark.parametrize(
+    ("openings", "message"),
+    [
+        ([{"x": 1.9, "sill": 0.5, "width": 0.5, "height": 1.0}], "extends beyond"),
+        ([{"x": 0.0, "sill": 2.0, "width": 0.5, "height": 1.0}], "extends beyond"),
+        ([{"x": 0.0, "sill": 0.0, "width": 4.0, "height": 2.6}], "whole wall"),
+        (
+            [
+                {"x": -1.0, "sill": 0.0, "width": 2.0, "height": 2.6},
+                {"x": 0.9, "sill": 0.0, "width": 2.2, "height": 2.6},
+            ],
+            "whole wall",
+        ),
+    ],
+)
+def test_wall_check_rejects_bad_openings(openings: list[dict[str, float]], message: str) -> None:
+    params = {"size": [4.0, 0.15, 2.6], "openings": openings}
+    problems = GEOMETRY.get("wall").check(params)
+    assert [p[0] for p in problems] == ["openings"]
+    assert message in problems[0][1]

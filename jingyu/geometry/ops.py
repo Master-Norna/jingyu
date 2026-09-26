@@ -391,8 +391,7 @@ def _check_wall(p: Mapping[str, Any]) -> list[ParamProblem]:
     for n, (x0, x1, _z0, z1) in enumerate(_wall_openings(p)):
         if x0 < -width / 2.0 - 1e-9 or x1 > width / 2.0 + 1e-9 or z1 > height + 1e-9:
             problems.append(("openings", f"opening {n} extends beyond the wall"))
-    area = sum((x1 - x0) * (z1 - z0) for x0, x1, z0, z1 in _wall_openings(p))
-    if not problems and area >= width * height - 1e-12:
+    if not problems and not _wall(p).faces:
         problems.append(("openings", "the openings remove the whole wall"))
     return problems
 

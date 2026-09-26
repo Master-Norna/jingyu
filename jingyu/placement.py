@@ -68,11 +68,16 @@ def resolve_placement(scene: Mapping[str, Any], *, build_meshes: bool = True) ->
             mesh = GEOMETRY.run(obj["geometry"])
             placement.meshes[obj["id"]] = WorldMesh.from_mesh(mesh, placement.world[obj["id"]])
 
+    unresolved: set[str] = set()
     for obj_id in _rest_order(scene, objects, placement):
         index, obj = objects[obj_id]
         support = obj["rest_on"]
+        if support in unresolved:  # already reported for the support
+            unresolved.add(obj_id)
+            continue
         shift = rest_shift(placement.meshes[obj_id], placement.meshes[support])
         if shift is None:
+            unresolved.add(obj_id)
             placement.issues.append(
                 Issue(
                     "spec.placement_failed",
