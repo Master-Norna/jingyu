@@ -129,6 +129,7 @@
       "description": "sRGB hex #rrggbb."
     },
     "geometry": {
+      "$id": "urn:jingyu:schema:geometry",
       "type": "object",
       "required": [
         "op"
@@ -143,11 +144,18 @@
             "cone",
             "lathe",
             "vessel",
+            "extrude",
+            "sweep",
+            "scatter",
             "wall",
             "room",
             "table",
             "chair",
-            "shelf"
+            "shelf",
+            "terrain",
+            "rock",
+            "tree",
+            "grass"
           ],
           "description": "Which geometry operator to use."
         }
@@ -558,6 +566,224 @@
               "seed": {
                 "type": "integer",
                 "description": "Variation of the irregularity: another number, another pot.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "extrude"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "extrude",
+            "description": "A floor plan pulled straight up: any simple polygon (an L-shaped counter, a hexagonal tile, a slab of irregular stone), optionally narrowing to the top.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "profile",
+              "height"
+            ],
+            "properties": {
+              "op": {
+                "const": "extrude",
+                "description": "A floor plan pulled straight up: any simple polygon (an L-shaped counter, a hexagonal tile, a slab of irregular stone), optionally narrowing to the top."
+              },
+              "profile": {
+                "type": "array",
+                "description": "Corners [x, y] of the outline in metres, in order around it; kept where they are (not centred).",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 3,
+                "maxItems": 1024
+              },
+              "height": {
+                "type": "number",
+                "description": "Height in metres.",
+                "exclusiveMinimum": 0
+              },
+              "taper": {
+                "type": "number",
+                "description": "Scale of the top outline about its centre: 1 straight walls, 0.5 half-size top.",
+                "maximum": 4,
+                "exclusiveMinimum": 0,
+                "default": 1.0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "sweep"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "sweep",
+            "description": "A round tube along a smooth path through points: a mug handle, a pipe, a cable, a stem, a bent rod; it may narrow from one end to the other. The path is kept where it is written.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "path",
+              "radius"
+            ],
+            "properties": {
+              "op": {
+                "const": "sweep",
+                "description": "A round tube along a smooth path through points: a mug handle, a pipe, a cable, a stem, a bent rod; it may narrow from one end to the other. The path is kept where it is written."
+              },
+              "path": {
+                "type": "array",
+                "description": "Points [x, y, z] in metres the tube passes through, in order; the curve between them is smooth.",
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "minItems": 2,
+                "maxItems": 256
+              },
+              "radius": {
+                "type": "number",
+                "description": "Radius at the start in metres.",
+                "exclusiveMinimum": 0
+              },
+              "radius_end": {
+                "type": "number",
+                "description": "Radius at the end in metres; 0 keeps the start radius.",
+                "minimum": 0,
+                "default": 0.0
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Segments around the tube.",
+                "minimum": 3,
+                "maximum": 256,
+                "default": 24
+              },
+              "samples": {
+                "type": "integer",
+                "description": "Smooth steps between neighbouring path points.",
+                "minimum": 1,
+                "maximum": 64,
+                "default": 8
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "scatter"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "scatter",
+            "description": "Copies of one shape strewn over a rectangle or disc on the ground, each turned, sized and tilted a little differently: pebbles, fallen leaves, a pile of beads, tufts. One object, one material.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "item",
+              "area"
+            ],
+            "properties": {
+              "op": {
+                "const": "scatter",
+                "description": "Copies of one shape strewn over a rectangle or disc on the ground, each turned, sized and tilted a little differently: pebbles, fallen leaves, a pile of beads, tufts. One object, one material."
+              },
+              "item": {
+                "$ref": "urn:jingyu:schema:geometry",
+                "description": "The shape to copy: any geometry call, e.g. a small sphere."
+              },
+              "area": {
+                "type": "array",
+                "description": "Width (x) and depth (y) of the area in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "shape": {
+                "enum": [
+                  "rectangle",
+                  "disc"
+                ],
+                "default": "rectangle",
+                "description": "The area is a rectangle, or the disc (ellipse) inside it."
+              },
+              "count": {
+                "type": "integer",
+                "description": "How many copies at most.",
+                "minimum": 1,
+                "maximum": 5000,
+                "default": 20
+              },
+              "spacing": {
+                "type": "number",
+                "description": "Least distance between copies' centres in metres; fewer than count fit when it is large.",
+                "minimum": 0,
+                "default": 0.0
+              },
+              "scale_jitter": {
+                "type": "number",
+                "description": "How much the size varies: 0 all alike, 0.3 up to 30 % larger or smaller.",
+                "minimum": 0,
+                "maximum": 0.9,
+                "default": 0.2
+              },
+              "rotate": {
+                "type": "boolean",
+                "default": true,
+                "description": "Turn each copy at random."
+              },
+              "tilt": {
+                "type": "number",
+                "description": "Largest lean of a copy in degrees.",
+                "minimum": 0,
+                "maximum": 90,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Another number, another arrangement.",
                 "minimum": 0,
                 "maximum": 100000,
                 "default": 0
@@ -1008,6 +1234,331 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "terrain"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "terrain",
+            "description": "A piece of land: rolling hills to ridged mountains, as a solid slab standing on its origin. Things stand on it with rest_on; water is a plane at the right height.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "terrain",
+                "description": "A piece of land: rolling hills to ridged mountains, as a solid slab standing on its origin. Things stand on it with rest_on; water is a plane at the right height."
+              },
+              "size": {
+                "type": "array",
+                "description": "Width (x) and depth (y) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "relief": {
+                "type": "number",
+                "description": "Height from the lowest dip to the highest top, metres.",
+                "minimum": 0,
+                "default": 2.0
+              },
+              "feature_size": {
+                "type": "number",
+                "description": "Typical width of a hill or valley in metres.",
+                "exclusiveMinimum": 0,
+                "default": 10.0
+              },
+              "detail": {
+                "type": "integer",
+                "description": "Layers of finer bumps on the big shapes.",
+                "minimum": 1,
+                "maximum": 8,
+                "default": 5
+              },
+              "ridges": {
+                "type": "number",
+                "description": "0 rounded hills, 1 sharp crests and ravines.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.0
+              },
+              "edge_falloff": {
+                "type": "number",
+                "description": "Lower the land toward the edges over this share of its half-size (an island, a patch that blends into a flat floor); 0 keeps the edges as they are.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.0
+              },
+              "base": {
+                "type": "number",
+                "description": "Solid ground under the lowest dip, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.2
+              },
+              "resolution": {
+                "type": "integer",
+                "description": "Grid cells along the longer side; more is finer and heavier.",
+                "minimum": 4,
+                "maximum": 512,
+                "default": 128
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Another number, another one of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "rock"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "rock",
+            "description": "A stone or boulder: a lumpy, irregular solid, flat where it sits on the ground. Every seed is another rock; pebbles are small rocks, scattered.",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "rock",
+                "description": "A stone or boulder: a lumpy, irregular solid, flat where it sits on the ground. Every seed is another rock; pebbles are small rocks, scattered."
+              },
+              "size": {
+                "type": "array",
+                "description": "Rough width (x), depth (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "default": [
+                  0.6,
+                  0.45,
+                  0.35
+                ]
+              },
+              "roughness": {
+                "type": "number",
+                "description": "0 a smooth river pebble, 1 a jagged broken block.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.5
+              },
+              "feature_size": {
+                "type": "number",
+                "description": "Size of the lumps relative to the rock: small is craggy, large is gently wavy.",
+                "exclusiveMinimum": 0,
+                "default": 0.6
+              },
+              "sink": {
+                "type": "number",
+                "description": "How much of its height is sunk into the ground (cut flat): 0 resting on its lowest point, 0.3 settled in.",
+                "minimum": 0,
+                "maximum": 0.8,
+                "default": 0.15
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Another number, another one of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "tree"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "tree",
+            "description": "A tree: a leaning trunk with branches under a crown of leafy clumps (broadleaf), or a tapering spire of needle tiers (conifer). Seen from a distance; parts trunk and foliage have bark and leaf materials of their own.",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "tree",
+                "description": "A tree: a leaning trunk with branches under a crown of leafy clumps (broadleaf), or a tapering spire of needle tiers (conifer). Seen from a distance; parts trunk and foliage have bark and leaf materials of their own."
+              },
+              "kind": {
+                "enum": [
+                  "broadleaf",
+                  "conifer"
+                ],
+                "default": "broadleaf",
+                "description": "Broad crown or spire."
+              },
+              "height": {
+                "type": "number",
+                "description": "Height in metres.",
+                "exclusiveMinimum": 0,
+                "default": 6.0
+              },
+              "trunk_radius": {
+                "type": "number",
+                "description": "Radius of the trunk at the ground, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.15
+              },
+              "crown_radius": {
+                "type": "number",
+                "description": "Radius of the crown in metres; 0 is 30 % of the height.",
+                "minimum": 0,
+                "default": 0.0
+              },
+              "crown_start": {
+                "type": "number",
+                "description": "Where the crown begins, as a share of the height.",
+                "minimum": 0.05,
+                "maximum": 0.9,
+                "default": 0.35
+              },
+              "clumps": {
+                "type": "integer",
+                "description": "Leaf clumps (broadleaf) or needle tiers (conifer).",
+                "minimum": 1,
+                "maximum": 40,
+                "default": 12
+              },
+              "lean": {
+                "type": "number",
+                "description": "Lean of the trunk in degrees.",
+                "minimum": 0,
+                "maximum": 30,
+                "default": 3.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Another number, another one of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "grass"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "grass",
+            "description": "A patch of grass: thousands of thin blades of varied height, bending a little, optionally in clumps. Give it a green, matte material; rest it on the ground.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "grass",
+                "description": "A patch of grass: thousands of thin blades of varied height, bending a little, optionally in clumps. Give it a green, matte material; rest it on the ground."
+              },
+              "size": {
+                "type": "array",
+                "description": "Width (x) and depth (y) of the patch in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "density": {
+                "type": "number",
+                "description": "Blades per square metre.",
+                "exclusiveMinimum": 0,
+                "default": 1500.0
+              },
+              "height": {
+                "type": "number",
+                "description": "Typical blade height in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.12
+              },
+              "height_jitter": {
+                "type": "number",
+                "description": "How much heights vary, 0 to 0.9.",
+                "minimum": 0,
+                "maximum": 0.9,
+                "default": 0.5
+              },
+              "blade_width": {
+                "type": "number",
+                "description": "Blade width in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.004
+              },
+              "bend": {
+                "type": "number",
+                "description": "How far blades lean over, as a share of their height.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.3
+              },
+              "patchiness": {
+                "type": "number",
+                "description": "0 an even lawn, 1 separate clumps with bare ground between.",
+                "minimum": 0,
+                "maximum": 1,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Another number, another one of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              }
+            }
+          }
         }
       ]
     },
@@ -1027,6 +1578,7 @@
             "stone",
             "fabric",
             "peel",
+            "water",
             "principled"
           ],
           "description": "Which material family to use."
@@ -1950,6 +2502,126 @@
                 "description": "0 dull, 1 waxy and shiny.",
                 "minimum": 0.0,
                 "maximum": 1.0,
+                "default": 0.5
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "water"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "water",
+            "description": "A water surface for a pond, a lake, the sea or a glass of water: clear to murky, still to wavy. Put it on a plane at the water level.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "water",
+                "description": "A water surface for a pond, a lake, the sea or a glass of water: clear to murky, still to wavy. Put it on a plane at the water level."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour the water takes in depth (white is perfectly clear). sRGB hex #rrggbb.",
+                "default": "#d8ecee"
+              },
+              "murk": {
+                "type": "number",
+                "description": "0 clear, 1 cloudy and opaque like a muddy pond.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.2
+              },
+              "waves": {
+                "type": "number",
+                "description": "0 a still mirror, 1 a windy, broken surface.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "wave_size": {
+                "type": "number",
+                "description": "Typical length of the waves in metres (a pond ~0.5, the sea ~5).",
+                "exclusiveMinimum": 0,
                 "default": 0.5
               },
               "seed": {

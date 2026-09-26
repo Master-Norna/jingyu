@@ -254,3 +254,12 @@ def test_weathering_is_validated_on_the_material_entry() -> None:
     assert result.normalized["materials"][0]["weathering"]["grime"] == 0.0
     scene["materials"][0]["weathering"] = {"rust": 0.5}
     assert not validate_scene(scene).valid
+
+
+def test_water_is_clear_and_wavy_or_still() -> None:
+    still = _recipe("water", waves=0.0)
+    assert still.transmission > 0.8 and still.ior == pytest.approx(1.333) and not still.bumps
+    wavy = _recipe("water", waves=0.8)
+    assert len(wavy.bumps) == 2
+    murky = _recipe("water", murk=1.0)
+    assert murky.transmission < still.transmission

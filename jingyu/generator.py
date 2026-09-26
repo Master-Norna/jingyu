@@ -111,6 +111,9 @@ class GeneratorRegistry(Generic[T]):
     kind: str
     discriminator: str
     unknown_code: str
+    #: ``$id`` of the union schema, so a generator can take another generator call
+    #: as a parameter by referring to it (``{"$ref": schema_id}``).
+    schema_id: str | None = None
     _defs: dict[str, GeneratorDef[T]] = field(default_factory=dict)
 
     def register(self, definition: GeneratorDef[T]) -> GeneratorDef[T]:
@@ -165,7 +168,10 @@ class GeneratorRegistry(Generic[T]):
                 branch["properties"][key] = copy.deepcopy(dict(value))
             branch["required"] = [*extra_required, *branch["required"]]
             branches[definition.name] = branch
-        return discriminated_union(self.discriminator, branches, f"Which {self.kind} to use.")
+        union = discriminated_union(self.discriminator, branches, f"Which {self.kind} to use.")
+        if self.schema_id is not None:
+            union = {"$id": self.schema_id, **union}
+        return union
 
     def catalog(self) -> list[dict[str, Any]]:
         return [d.catalog_entry() for d in self._defs.values()]

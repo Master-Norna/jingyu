@@ -23,13 +23,27 @@ def apply_defaults(instance: Any, schema: Mapping[str, Any], root: Mapping[str, 
     return _fill(copy.deepcopy(instance), schema, root)
 
 
+def _by_id(root: Mapping[str, Any], ref: str) -> Mapping[str, Any]:
+    """The schema that declares ``$id`` *ref*: the root itself or one of its ``$defs``."""
+
+    if root.get("$id") == ref:
+        return root
+    for candidate in root.get("$defs", {}).values():
+        if isinstance(candidate, Mapping) and candidate.get("$id") == ref:
+            return candidate
+    raise ValueError(f"unsupported $ref {ref!r}")
+
+
 def _resolve(schema: Mapping[str, Any], root: Mapping[str, Any]) -> Mapping[str, Any]:
     seen = 0
     while "$ref" in schema:
         ref = schema["$ref"]
-        if not isinstance(ref, str) or not ref.startswith("#/$defs/"):
+        if not isinstance(ref, str):
             raise ValueError(f"unsupported $ref {ref!r}")
-        target = root["$defs"][ref.removeprefix("#/$defs/")]
+        if ref.startswith("#/$defs/"):
+            target = root["$defs"][ref.removeprefix("#/$defs/")]
+        else:
+            target = _by_id(root, ref)
         merged = {k: v for k, v in schema.items() if k != "$ref"}
         schema = {**target, **merged}
         seen += 1

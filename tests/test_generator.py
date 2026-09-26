@@ -104,7 +104,9 @@ def test_defaults_and_examples_satisfy_their_own_schemas(
         if "default" in schema:
             errors = list(Draft202012Validator(dict(schema)).iter_errors(schema["default"]))
             assert not errors, f"{definition.name}.{name} default: {errors[0].message}"
-    branch = Draft202012Validator(definition.branch_schema(registry.discriminator))
+    # The union selects this generator's branch; unlike the bare branch, it also
+    # resolves a parameter that is itself a generator call (scatter's item).
+    branch = Draft202012Validator(registry.union_schema())
     for example in definition.examples:
         assert example[registry.discriminator] == definition.name
         errors = list(branch.iter_errors(dict(example)))

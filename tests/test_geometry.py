@@ -13,12 +13,15 @@ from jingyu.geometry import GEOMETRY, MeshData
 from jingyu.geometry.curves import linspace, pchip, smooth_monotone
 from jingyu.geometry.lathe import close_solid, revolve, shell
 from jingyu.geometry.ops import vessel_profile
+from jingyu.scene import scene_schema
 from jingyu.scene.normalize import apply_defaults
 
 #: Flat shapes are single-sided surfaces, not solids.
 FLAT_OPS = {"plane"}
 #: A room stands on its floor surface: the floor slab lies below the origin.
 ORIGIN_ON_FLOOR = {"room"}
+#: A sweep keeps the path it is given (a handle's ends on its mug's side).
+KEEPS_COORDINATES = {"sweep"}
 
 
 def _defaults(definition: GeneratorDef[Any]) -> dict[str, Any]:
@@ -29,7 +32,7 @@ def _params(definition: GeneratorDef[Any], example: Mapping[str, Any]) -> dict[s
     """Parameters as a scene hands them to a generator: every default filled, nested too."""
 
     schema = definition.branch_schema("op")
-    filled = apply_defaults({"op": definition.name, **example}, schema, schema)
+    filled = apply_defaults({"op": definition.name, **example}, schema, scene_schema())
     return {k: v for k, v in filled.items() if k != "op"}
 
 
@@ -77,7 +80,9 @@ def test_ops_produce_valid_meshes_from_defaults_and_examples(
     assert mesh.is_closed_manifold()
     assert mesh.signed_volume() > 0
     # Solids stand on their origin.
-    if name in ORIGIN_ON_FLOOR:
+    if name in KEEPS_COORDINATES:
+        pass
+    elif name in ORIGIN_ON_FLOOR:
         assert mesh.bounds()[0][2] == pytest.approx(-params["slab_thickness"] * params["floor"])
     else:
         assert mesh.bounds()[0][2] == pytest.approx(0.0, abs=1e-12)
@@ -514,3 +519,119 @@ def test_rounded_boxes_keep_their_size_and_round_their_edges() -> None:
     assert round_.signed_volume() < exact
     box = GEOMETRY.get("box")
     assert box.check(box.with_defaults({"size": [0.4, 0.2, 0.1], "bevel": 0.06}))
+
+
+# ------------------------------------------------------------ free-form shapes
+
+
+def test_extrude_handles_concave_outlines_either_way_round() -> None:
+    l_shape = [[0, 0], [1.2, 0], [1.2, 0.6], [0.6, 0.6], [0.6, 1.4], [0, 1.4]]
+    for profile in (l_shape, list(reversed(l_shape))):
+        mesh = GEOMETRY.run({"op": "extrude", "profile": profile, "height": 0.9})
+        assert mesh.is_closed_manifold()
+        area = 1.2 * 0.6 + 0.6 * 0.8
+        assert mesh.signed_volume() == pytest.approx(area * 0.9)
+    tapered = GEOMETRY.run({"op": "extrude", "profile": l_shape, "height": 0.9, "taper": 0.5})
+    assert tapered.is_closed_manifold() and tapered.signed_volume() < area * 0.9
+    bow_tie = {"op": "extrude", "profile": [[0, 0], [1, 1], [1, 0], [0, 1]], "height": 1}
+    extrude = GEOMETRY.get("extrude")
+    assert extrude.check(extrude.with_defaults({k: v for k, v in bow_tie.items() if k != "op"}))
+
+
+def test_sweep_makes_a_closed_tube_that_narrows() -> None:
+    mesh = GEOMETRY.run(
+        {
+            "op": "sweep",
+            "path": [[0, 0, 0], [0, 0, 0.5], [0.3, 0, 0.8]],
+            "radius": 0.02,
+            "radius_end": 0.01,
+        }
+    )
+    assert mesh.is_closed_manifold() and mesh.signed_volume() > 0
+    top = [v for v in mesh.vertices if v[2] > 0.79]
+    assert max(abs(v[1]) for v in top) < 0.0101
+    straight = GEOMETRY.run({"op": "sweep", "path": [[0, 0, 0], [0, 0, 1]], "radius": 0.1})
+    assert straight.signed_volume() == pytest.approx(math.pi * 0.01, rel=0.02)
+    sweep = GEOMETRY.get("sweep")
+    doubled = sweep.with_defaults({"path": [[0, 0, 0], [0, 0, 0], [1, 0, 0]], "radius": 0.1})
+    assert sweep.check(doubled)
+
+
+def test_scatter_keeps_its_spacing_and_checks_its_item() -> None:
+    spec = {
+        "op": "scatter",
+        "item": {"op": "box", "size": [0.02, 0.02, 0.02]},
+        "area": [0.5, 0.5],
+        "count": 40,
+        "spacing": 0.06,
+        "scale_jitter": 0.0,
+    }
+    mesh = GEOMETRY.run(spec)
+    assert mesh.is_closed_manifold()
+    centres = [
+        tuple(sum(mesh.vertices[k + i][a] for i in range(8)) / 8 for a in range(2))
+        for k in range(0, len(mesh.vertices), 8)
+    ]
+    assert 10 < len(centres) <= 40
+    assert (
+        min(math.dist(a, b) for i, a in enumerate(centres) for b in centres[i + 1 :]) >= 0.06 - 1e-9
+    )
+    assert GEOMETRY.run({**spec, "seed": 1}).vertices != mesh.vertices
+    scatter = GEOMETRY.get("scatter")
+    bad = scatter.with_defaults(
+        {
+            **{k: v for k, v in spec.items() if k != "op"},
+            "item": {"op": "box", "size": [1, 1, 1], "bevel": 0.9},
+        }
+    )
+    assert "box" in scatter.check(bad)[0][1]
+
+
+def test_things_rest_on_terrain_and_rocks_sit_flat() -> None:
+    from jingyu.scene import validate_scene
+
+    scene = {
+        "schema": "jingyu.scene.v1",
+        "id": "hill",
+        "objects": [
+            {
+                "id": "land",
+                "geometry": {"op": "terrain", "size": [20, 20], "relief": 3, "resolution": 48},
+            },
+            {
+                "id": "stone",
+                "geometry": {"op": "rock", "seed": 3},
+                "location": [2, -1, 0],
+                "rest_on": "land",
+            },
+        ],
+        "cameras": [{"id": "c", "location": [0, -30, 10], "look_at": [0, 0, 1]}],
+        "render": {"camera": "c"},
+    }
+    result = validate_scene(scene)
+    assert result.valid, result.issues
+    stone = result.placement.meshes["stone"]
+    assert stone.bounds()[0][2] > 0.2  # it sits on the land, above its base
+    rock = GEOMETRY.run({"op": "rock", "sink": 0.3})
+    flat = [v for v in rock.vertices if v[2] < 1e-12]
+    assert len(flat) > 20  # a flat face where it is cut into the ground
+
+
+def test_trees_have_trunk_and_foliage_with_their_own_materials() -> None:
+    for kind in ("broadleaf", "conifer"):
+        mesh = GEOMETRY.run({"op": "tree", "kind": kind, "height": 5})
+        assert mesh.parts == ("trunk", "foliage")
+        assert {mesh.parts[p] for p in mesh.face_parts} == {"trunk", "foliage"}
+        assert mesh.bounds()[0][2] == pytest.approx(0.0)
+        assert mesh.bounds()[1][2] == pytest.approx(5.0, rel=0.25)
+    tree = GEOMETRY.get("tree")
+    assert tree.part_defaults["trunk"]["family"] == "wood"
+
+
+def test_grass_density_sets_the_number_of_blades() -> None:
+    sparse = GEOMETRY.run({"op": "grass", "size": [1, 1], "density": 100})
+    dense = GEOMETRY.run({"op": "grass", "size": [1, 1], "density": 400})
+    assert len(sparse.faces) == 4 * 100 and len(dense.faces) == 4 * 400
+    assert dense.is_closed_manifold()
+    patchy = GEOMETRY.run({"op": "grass", "size": [1, 1], "density": 400, "patchiness": 0.8})
+    assert len(patchy.faces) < len(dense.faces)

@@ -589,6 +589,56 @@ PEEL = GeneratorDef[Recipe](
 )
 
 
+# ----------------------------------------------------------------------- water
+
+
+def _water(p: Mapping[str, Any]) -> Recipe:
+    seed = int(p["seed"])
+    size = float(p["wave_size"])
+    waves = float(p["waves"])
+    swell = Field("noise", size=size, detail=3, roughness=0.5, stretch=(0.6, 1.0, 1.0), seed=seed)
+    ripples = Field("noise", size=size * 0.15, detail=2, seed=seed + 1)
+    recipe = Recipe(
+        base_color=srgb_hex_to_linear(p["color"]),
+        roughness=0.02 + 0.1 * float(p["murk"]),
+        ior=1.333,
+        transmission=1.0 - 0.6 * float(p["murk"]),
+    )
+    if waves <= 0:
+        return recipe
+    return recipe.with_layers(
+        bumps=(
+            Bump(swell, distance=size * 0.05 * waves, strength=min(1.0, 0.3 + waves)),
+            Bump(ripples, distance=size * 0.01 * waves, strength=0.5),
+        )
+    )
+
+
+WATER = GeneratorDef[Recipe](
+    name="water",
+    summary=(
+        "A water surface for a pond, a lake, the sea or a glass of water: clear to murky, "
+        "still to wavy. Put it on a plane at the water level."
+    ),
+    params={
+        "color": _color("Colour the water takes in depth (white is perfectly clear).", "#d8ecee"),
+        "murk": _unit("0 clear, 1 cloudy and opaque like a muddy pond.", 0.2),
+        "waves": _unit("0 a still mirror, 1 a windy, broken surface.", 0.3),
+        "wave_size": number(
+            "Typical length of the waves in metres (a pond ~0.5, the sea ~5).",
+            default=0.5,
+            exclusive_minimum=0,
+        ),
+        "seed": _SEED,
+    },
+    run=_water,
+    examples=(
+        {"family": "water"},
+        {"family": "water", "color": "#5e8a86", "murk": 0.6, "waves": 0.1},
+    ),
+)
+
+
 ALL_FAMILIES: tuple[GeneratorDef[Recipe], ...] = (
     CERAMIC,
     GLASS,
@@ -598,6 +648,7 @@ ALL_FAMILIES: tuple[GeneratorDef[Recipe], ...] = (
     STONE,
     FABRIC,
     PEEL,
+    WATER,
     PRINCIPLED,
 )
 

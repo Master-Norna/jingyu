@@ -1,0 +1,243 @@
+{
+  "cameras": [
+    {
+      "id": "cam",
+      "lens_mm": 30,
+      "location": [
+        -2,
+        -6,
+        1.8
+      ],
+      "look_at": [
+        2,
+        10,
+        1.2
+      ]
+    }
+  ],
+  "id": "lakeside",
+  "intent": "傍晚低斜的阳光从右后方掠过草坡和岩石，树投下长影，湖面映着淡色的天，远处的坡在薄雾里变淡。",
+  "materials": [
+    {
+      "color": "#6d7d3f",
+      "family": "plastic",
+      "gloss": 0.05,
+      "id": "turf",
+      "texture": 0.8
+    },
+    {
+      "color": "#9fc4c0",
+      "family": "water",
+      "id": "lake",
+      "murk": 0.35,
+      "wave_size": 1.5,
+      "waves": 0.15
+    },
+    {
+      "accent_color": "#3a3632",
+      "color": "#8e8a84",
+      "family": "stone",
+      "id": "granite",
+      "kind": "granite",
+      "polish": 0.0,
+      "weathering": {
+        "dust": 0.2,
+        "grime": 0.4
+      }
+    },
+    {
+      "color": "#7f8f45",
+      "family": "plastic",
+      "gloss": 0.1,
+      "id": "blades"
+    }
+  ],
+  "notes": "自然景观与自由形状生成器的冒烟示例（地形、岩石、散布、树、草、水）：用于检验这些生成器能搭建和渲染，不是画面范例。",
+  "objects": [
+    {
+      "geometry": {
+        "detail": 5,
+        "feature_size": 35,
+        "op": "terrain",
+        "relief": 5,
+        "resolution": 180,
+        "seed": 4,
+        "size": [
+          160,
+          160
+        ]
+      },
+      "id": "land",
+      "location": [
+        0,
+        0,
+        -2.5
+      ],
+      "material": "turf"
+    },
+    {
+      "accept_warnings": [
+        "physics.floating",
+        "physics.intersection"
+      ],
+      "geometry": {
+        "op": "plane",
+        "size": [
+          160,
+          160
+        ]
+      },
+      "id": "water",
+      "location": [
+        0,
+        0,
+        -0.35
+      ],
+      "material": "lake"
+    },
+    {
+      "geometry": {
+        "op": "rock",
+        "seed": 2,
+        "size": [
+          1.6,
+          1.2,
+          0.9
+        ]
+      },
+      "id": "boulder",
+      "location": [
+        3,
+        6,
+        5
+      ],
+      "material": "granite",
+      "rest_on": "land"
+    },
+    {
+      "accept_warnings": [
+        "physics.intersection",
+        "physics.floating"
+      ],
+      "geometry": {
+        "area": [
+          4,
+          3
+        ],
+        "count": 12,
+        "item": {
+          "op": "rock",
+          "roughness": 0.4,
+          "size": [
+            0.3,
+            0.25,
+            0.18
+          ]
+        },
+        "op": "scatter",
+        "scale_jitter": 0.5,
+        "seed": 5,
+        "spacing": 0.6
+      },
+      "id": "stones",
+      "location": [
+        1,
+        4,
+        5
+      ],
+      "material": "granite",
+      "rest_on": "land"
+    },
+    {
+      "geometry": {
+        "height": 7,
+        "op": "tree",
+        "seed": 1,
+        "trunk_radius": 0.2
+      },
+      "id": "oak",
+      "location": [
+        -5,
+        11,
+        8
+      ],
+      "rest_on": "land"
+    },
+    {
+      "geometry": {
+        "height": 10,
+        "kind": "conifer",
+        "op": "tree",
+        "seed": 3,
+        "trunk_radius": 0.22
+      },
+      "id": "pine_a",
+      "location": [
+        7,
+        20,
+        8
+      ],
+      "rest_on": "land"
+    },
+    {
+      "geometry": {
+        "height": 8,
+        "kind": "conifer",
+        "op": "tree",
+        "seed": 8,
+        "trunk_radius": 0.18
+      },
+      "id": "pine_b",
+      "location": [
+        14,
+        17,
+        8
+      ],
+      "rest_on": "land"
+    },
+    {
+      "accept_warnings": [
+        "physics.intersection",
+        "physics.floating"
+      ],
+      "geometry": {
+        "density": 900,
+        "height": 0.25,
+        "op": "grass",
+        "patchiness": 0.3,
+        "size": [
+          6,
+          4
+        ]
+      },
+      "id": "meadow",
+      "location": [
+        -1,
+        5,
+        8
+      ],
+      "material": "blades",
+      "rest_on": "land"
+    }
+  ],
+  "render": {
+    "camera": "cam",
+    "resolution": [
+      1280,
+      720
+    ],
+    "samples": 64
+  },
+  "schema": "jingyu.scene.v1",
+  "title": "湖边的傍晚：起伏的草坡、湖面、岩石和几棵树",
+  "world": {
+    "environment": {
+      "family": "daylight",
+      "ground_color": "#6f7a4a",
+      "haze": 2,
+      "mist": 0.03,
+      "sun_azimuth": 55,
+      "sun_elevation": 9
+    }
+  }
+}
