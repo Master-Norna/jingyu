@@ -297,3 +297,43 @@ def test_host_projection_matches_the_render(
         seen = layout[f"m{i}"]["centroid_uv"]
         assert abs(seen["u"] - u) * 320 < 1.2, (i, seen, (u, v))
         assert abs(seen["v"] - v) * 240 < 1.2, (i, seen, (u, v))
+
+
+def test_solved_framing_and_sun_hold_in_the_render(runtime: BlenderRuntime, tmp_path: Path) -> None:
+    """frame_subject and aim_sun predict what Blender then renders."""
+
+    from test_solve import _room
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    context = ToolContext(workspace, render_timeout_s=TIMEOUT_S)
+    framed = REGISTRY.invoke(
+        "frame_subject",
+        {"scene": _room(), "subject": ["still"], "at": {"u": 0.4, "v": 0.55}, "size": 0.4},
+        context,
+    ).data
+    target = [0.35, -0.2, 0.75]
+    sunny = REGISTRY.invoke(
+        "aim_sun", {"scene": framed["scene"], "target": {"point": target}}, context
+    ).data
+    scene = sunny["scene"]
+    scene["render"]["resolution"] = [320, 240]
+    candidate = render_scene(
+        workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S
+    ).candidate
+    layout = IdMask.load(candidate).layout()
+    boxes = [o["bbox_uv"] for o in layout["objects"] if o["object"] in ("vase", "cup")]
+    u0, u1 = min(b["u0"] for b in boxes), max(b["u1"] for b in boxes)
+    v0, v1 = min(b["v0"] for b in boxes), max(b["v1"] for b in boxes)
+    assert (u0 + u1) / 2 == pytest.approx(0.4, abs=2 / 320)
+    assert (v0 + v1) / 2 == pytest.approx(0.55, abs=2 / 240)
+    assert max(u1 - u0, v1 - v0) == pytest.approx(0.4, abs=3 / 240)
+    from jingyu.camera import CameraModel
+    from jingyu.scene import validate_scene
+
+    result = validate_scene(scene)
+    u, v, _ = CameraModel.from_scene(result.require_valid(), result.placement).project(target) or (
+        0,
+        0,
+        0,
+    )
+    assert "environment.sun" in LightMap.load(candidate).at_uv(u, v)["lit_by"]

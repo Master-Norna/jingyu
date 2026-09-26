@@ -25,6 +25,7 @@ from ..scene.diff import diff_scenes
 from ..scene.patch import OPS as PATCH_OPS
 from ..scene.patch import apply_patch
 from ..sightlines import background_openings
+from ..solve import FramingRequest, SunRequest, aim_sun, frame_subject
 from ..views import VIEWS, render_view
 from .registry import ImagePayload, Tool, ToolContext, ToolRegistry, ToolResult
 
@@ -157,6 +158,10 @@ GUIDE_WORKFLOW = [
     "joins with attached_to, and deliberate warnings with accept_warnings.",
     "render_scene with quality 'preview'. Read the warnings on the result: frame.* "
     "warnings say an object is out of frame or the exposure is off.",
+    "Solve instead of trial and error when you know the goal: frame_subject puts chosen "
+    "objects at a place and size in the frame (it moves the camera); aim_sun puts "
+    "sunlight on a spot, through a window when indoors. Both return edit_scene "
+    "operations and a prediction; render once to confirm.",
     "Look before you measure: view the image (glance, then squint or values), and write "
     "one sentence saying what it actually shows. Compare it with the intent and name "
     "the biggest gap (light, silhouette, space, colour). describe_layout and "
@@ -279,6 +284,75 @@ def _edit_scene(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         target.write_bytes(pretty_bytes(edited))
         data["saved_to"] = ctx.workspace.relative(target)
     return ToolResult(data)
+
+
+def _solved(
+    ctx: ToolContext, source: Any, solution: dict[str, Any], save_as: str | None
+) -> ToolResult:
+    """Apply a solver's operations to the scene and report it the way edit_scene does."""
+
+    edited = apply_patch(source, solution["operations"])
+    result = validate_scene(edited)
+    data = {
+        **solution,
+        "valid": result.valid,
+        "issues": [i.to_dict() for i in result.issues],
+        "scene_sha256": result.scene_sha256,
+        "scene": edited,
+    }
+    if save_as is not None:
+        target = ctx.workspace.resolve(save_as, must_exist=False)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(pretty_bytes(edited))
+        data["saved_to"] = ctx.workspace.relative(target)
+    return ToolResult(data)
+
+
+def _valid_scene(ctx: ToolContext, args: dict[str, Any]) -> tuple[Any, Any, Any]:
+    """The scene as given, its normalised form and its placement; invalid scenes fail."""
+
+    source = _load_scene(ctx, args)
+    result = validate_scene(source)
+    normalized = result.require_valid()
+    return source, normalized, result.placement
+
+
+def _frame_subject(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    source, normalized, placement = _valid_scene(ctx, args)
+    at = args.get("at", {"u": 0.5, "v": 0.5})
+    request = FramingRequest(
+        subject=tuple(args["subject"]),
+        at=(float(at["u"]), float(at["v"])),
+        size=float(args.get("size", 0.5)),
+        size_of=args.get("size_of", "larger"),
+        camera=args.get("camera"),
+        azimuth=args.get("azimuth"),
+        elevation=args.get("elevation"),
+        lens_mm=args.get("lens_mm"),
+        distance=args.get("distance"),
+    )
+    return _solved(ctx, source, frame_subject(normalized, placement, request), args.get("save_as"))
+
+
+def _aim_sun(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    source, normalized, placement = _valid_scene(ctx, args)
+    target = args["target"]
+    through = args.get("through")
+    opening = None
+    if through is not None:
+        key = through["opening"]
+        opening = (through["object"], f"openings/{key}" if isinstance(key, int) else str(key))
+    uv = target.get("uv")
+    request = SunRequest(
+        point=tuple(target["point"]) if "point" in target else None,
+        object=target.get("object"),
+        uv=(float(uv["u"]), float(uv["v"])) if uv is not None else None,
+        through=opening,
+        elevation=args.get("elevation"),
+        azimuth=args.get("azimuth"),
+        light=args.get("light"),
+    )
+    return _solved(ctx, source, aim_sun(normalized, placement, request), args.get("save_as"))
 
 
 def _diff_candidates(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -700,6 +774,196 @@ REGISTRY.add(
         read_only=False,
         idempotent=False,
         returns_images=True,
+    )
+)
+
+_UV = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["u", "v"],
+    "properties": {
+        "u": {"type": "number", "description": "From the left edge, 0 to 1."},
+        "v": {"type": "number", "description": "From the top edge, 0 to 1."},
+    },
+}
+_SOLVED_OUTPUT = {
+    "operations": {"type": "array"},
+    "warnings": {"type": "array"},
+    "valid": {"type": "boolean"},
+    "issues": {"type": "array", "items": _ISSUE},
+    "scene_sha256": {"type": ["string", "null"]},
+    "scene": _ANY_OBJECT,
+    "saved_to": _STRING,
+}
+_SAVE_AS = {"type": "string", "description": "Workspace path to write the edited scene to."}
+
+REGISTRY.add(
+    Tool(
+        name="frame_subject",
+        title="Solve the camera from a framing",
+        description=(
+            "Say where things should sit in the frame and how big, and get the camera that "
+            "does it: subject (object or group ids; an object brings what is parented to "
+            "it), at (where the centre of the subject's box goes, u from the left and v from "
+            "the top), size (the share of the frame it spans). The camera keeps the "
+            "direction it sees the subject from unless azimuth/elevation are given, keeps "
+            "its lens and solves its distance (or keeps distance and solves lens_mm). "
+            "Returns the camera, edit_scene operations, the edited scene, where every "
+            "object would land in the frame, and warnings (the camera inside a wall, "
+            "something hiding the subject). Nothing is rendered."
+        ),
+        input_schema=_input(
+            {
+                **_SCENE_SOURCE_PROPS,
+                "subject": {
+                    "type": "array",
+                    "items": _STRING,
+                    "minItems": 1,
+                    "uniqueItems": True,
+                    "description": "Object or group ids to frame together.",
+                },
+                "at": {
+                    **_UV,
+                    "description": "Where the subject's centre goes; default the middle.",
+                },
+                "size": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "maximum": 4,
+                    "default": 0.5,
+                    "description": "Share of the frame the subject spans (1 = edge to edge).",
+                },
+                "size_of": {
+                    "enum": ["larger", "width", "height"],
+                    "default": "larger",
+                    "description": "Which extent size measures: the larger of the two, or the "
+                    "width or the height of the subject's box.",
+                },
+                "camera": {
+                    "type": "string",
+                    "description": "Camera id; default the render camera.",
+                },
+                "azimuth": {
+                    "type": "number",
+                    "description": "Direction from the subject toward the camera, degrees "
+                    "counter-clockwise from +X seen from above; default: as now.",
+                },
+                "elevation": {
+                    "type": "number",
+                    "minimum": -90,
+                    "maximum": 90,
+                    "description": "How high the camera looks down on the subject, degrees; "
+                    "default: as now.",
+                },
+                "lens_mm": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Use this focal length and solve the distance.",
+                },
+                "distance": {
+                    "type": "number",
+                    "exclusiveMinimum": 0,
+                    "description": "Stay this far from the subject's centre and solve the lens.",
+                },
+                "save_as": _SAVE_AS,
+            },
+            ["subject"],
+            oneOf=_SCENE_SOURCE_ONE_OF,
+        ),
+        output_schema=_output(
+            {
+                **_SOLVED_OUTPUT,
+                "camera": _ANY_OBJECT,
+                "subject": _ANY_OBJECT,
+                "frame": {"type": "array"},
+            },
+            ["camera", "operations", "subject", "frame", "warnings", "valid", "scene"],
+        ),
+        handler=_frame_subject,
+    )
+)
+REGISTRY.add(
+    Tool(
+        name="aim_sun",
+        title="Solve the sun from where its light should land",
+        description=(
+            "Say where sunlight should land and get the sun elevation and azimuth that put "
+            "it there: target is a world point, an object (its top) or a spot of the frame "
+            "(uv). Indoors the sun is aimed through an opening (through: a wall and its "
+            "opening, or any opening when omitted); fix elevation (time of day) or azimuth "
+            "and the other is searched. Every direction is checked for shadows on the way. "
+            "Returns the angles, edit_scene operations, the edited scene, the span of "
+            "angles that still pass the opening, and where the patch of sunlight falls "
+            "(objects and frame boxes). Nothing is rendered."
+        ),
+        input_schema=_input(
+            {
+                **_SCENE_SOURCE_PROPS,
+                "target": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "description": "Where the sunlight must land: one of point, object or uv.",
+                    "properties": {
+                        "point": {
+                            "type": "array",
+                            "items": {"type": "number"},
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "description": "A world point in metres.",
+                        },
+                        "object": {"type": "string", "description": "An object id: its top."},
+                        "uv": {**_UV, "description": "A spot of the render camera's frame."},
+                    },
+                    "oneOf": [
+                        {"required": ["point"]},
+                        {"required": ["object"]},
+                        {"required": ["uv"]},
+                    ],
+                },
+                "through": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["object", "opening"],
+                    "properties": {
+                        "object": {"type": "string", "description": "The wall (or room) id."},
+                        "opening": {
+                            "type": ["integer", "string"],
+                            "description": "Opening index (0 is the first in openings) or "
+                            "its key such as openings/0.",
+                        },
+                    },
+                },
+                "elevation": {
+                    "type": "number",
+                    "minimum": -10,
+                    "maximum": 90,
+                    "description": "Keep the sun this high and solve the azimuth.",
+                },
+                "azimuth": {
+                    "type": "number",
+                    "description": "Keep the sun in this direction and solve the elevation.",
+                },
+                "light": {
+                    "type": "string",
+                    "description": "environment.sun (default with daylight) or a sun light id.",
+                },
+                "save_as": _SAVE_AS,
+            },
+            ["target"],
+            oneOf=_SCENE_SOURCE_ONE_OF,
+        ),
+        output_schema=_output(
+            {
+                **_SOLVED_OUTPUT,
+                "light": _STRING,
+                "sun": _ANY_OBJECT,
+                "target": _ANY_OBJECT,
+                "through": _ANY_OBJECT,
+                "patch": {"type": "array"},
+            },
+            ["light", "sun", "target", "operations", "warnings", "valid", "scene"],
+        ),
+        handler=_aim_sun,
     )
 )
 REGISTRY.add(

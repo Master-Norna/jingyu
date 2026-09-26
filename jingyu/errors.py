@@ -44,6 +44,13 @@ ERROR_CODES: dict[str, str] = {
     "frame.overexposed": "Warning: a large part of the rendered frame is pure white.",
     "light.open_to_sky": "Warning: a room with windows is open to the sky around the camera.",
     "light.unknown_light": "The light pass has no light with this id.",
+    # Solvers (working back from a goal to scene parameters)
+    "solve.no_solution": "No parameter values achieve the requested goal.",
+    "solve.size_unreached": "Warning: the solved framing cannot give the subject the size asked.",
+    "solve.camera_inside": "Warning: the solved camera position is inside an object.",
+    "solve.subject_hidden": "Warning: another object stands between the camera and the subject.",
+    "solve.sun_blocked": "Warning: something blocks the sunlight on its way to the target.",
+    "solve.low_sun": "Warning: the solved sun is so low that daylight gives almost no direct sun.",
     # Generators
     "geometry.unknown_op": "The geometry operator is not registered.",
     "geometry.invalid_profile": "A lathe profile cannot be revolved into a valid solid.",
