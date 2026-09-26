@@ -18,6 +18,7 @@ from ..generator import discriminated_union
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
 from ..materials.weathering import WEATHERING_SCHEMA
+from ..style import PRESETS as STYLE_PRESETS
 from .warnings import ACCEPTABLE_WARNINGS
 
 SCENE_SCHEMA = "jingyu.scene.v1"
@@ -386,6 +387,55 @@ def _render_schema() -> dict[str, Any]:
                 "type": "boolean",
                 "default": False,
                 "description": "Render the world background as transparent.",
+            },
+            "style": {
+                "type": "object",
+                "additionalProperties": False,
+                "default": {},
+                "description": (
+                    "Paint the render in a style after it is rendered; the photographic "
+                    "render is kept beside it (view render). Lines follow the scene's real "
+                    "edges."
+                ),
+                "properties": {
+                    "preset": {
+                        "enum": list(STYLE_PRESETS),
+                        "default": "none",
+                        "description": "; ".join(f"{k}: {v}" for k, v in STYLE_PRESETS.items()),
+                    },
+                    "strength": _number(
+                        "How much of the style: 1 fully painted, 0.5 half over the render.",
+                        1.0,
+                        minimum=0.0,
+                        maximum=1.0,
+                    ),
+                    "line_width": _number(
+                        "Line width in pixels at 1280 wide (scaled with the image).",
+                        1.5,
+                        minimum=0.0,
+                        maximum=20.0,
+                    ),
+                    "paper": _number(
+                        "How much the paper or canvas texture shows, 0 to 1.",
+                        0.5,
+                        minimum=0.0,
+                        maximum=1.0,
+                    ),
+                    "levels": {
+                        "type": "integer",
+                        "minimum": 2,
+                        "maximum": 8,
+                        "default": 3,
+                        "description": "Bands of light and shadow in the cel style.",
+                    },
+                    "seed": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100000,
+                        "default": 0,
+                        "description": "Another number, another paper.",
+                    },
+                },
             },
         },
     }

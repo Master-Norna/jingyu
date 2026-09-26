@@ -84,6 +84,7 @@ ERROR_CODES: dict[str, str] = {
     "tool.invalid_arguments": "Tool arguments do not match the tool's input schema.",
     "tool.invalid_output": "A tool produced output that violates its output schema.",
     "constitution.unknown_clause": "The constitution has no clause or section with this id.",
+    "charter.invalid": "A picture charter does not match the charter schema.",
     "internal.unexpected": "An unexpected internal error occurred.",
 }
 

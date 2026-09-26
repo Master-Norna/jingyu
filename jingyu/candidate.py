@@ -30,6 +30,8 @@ RECEIPT_SCHEMA = "jingyu.receipt.v1"
 RECEIPT_NAME = "receipt.json"
 SCENE_NAME = "scene.json"
 IMAGE_NAME = "image.png"
+#: The photographic render, kept when a style painted image.png.
+RENDER_NAME = "render.png"
 ID_MASK_NAME = "id_mask.png"
 ID_MAP_NAME = "id_map.json"
 LIGHT_MASK_NAME = "light_mask.png"

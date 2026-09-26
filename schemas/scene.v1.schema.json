@@ -3716,6 +3716,60 @@
           "type": "boolean",
           "default": false,
           "description": "Render the world background as transparent."
+        },
+        "style": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "description": "Paint the render in a style after it is rendered; the photographic render is kept beside it (view render). Lines follow the scene's real edges.",
+          "properties": {
+            "preset": {
+              "enum": [
+                "none",
+                "ink",
+                "watercolor",
+                "oil",
+                "cel"
+              ],
+              "default": "none",
+              "description": "none: The render as it is.; ink: Pen lines along every edge over quiet, flattened colour on paper.; watercolor: Soft washes that darken at their edges, pigment settling in the paper grain.; oil: Dabs of paint that keep the big shapes and melt small detail, on canvas.; cel: Flat bands of light and shadow with bold outlines, like animation."
+            },
+            "strength": {
+              "type": "number",
+              "description": "How much of the style: 1 fully painted, 0.5 half over the render.",
+              "default": 1.0,
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "line_width": {
+              "type": "number",
+              "description": "Line width in pixels at 1280 wide (scaled with the image).",
+              "default": 1.5,
+              "minimum": 0.0,
+              "maximum": 20.0
+            },
+            "paper": {
+              "type": "number",
+              "description": "How much the paper or canvas texture shows, 0 to 1.",
+              "default": 0.5,
+              "minimum": 0.0,
+              "maximum": 1.0
+            },
+            "levels": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 8,
+              "default": 3,
+              "description": "Bands of light and shadow in the cel style."
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0,
+              "description": "Another number, another paper."
+            }
+          }
         }
       }
     },

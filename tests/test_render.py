@@ -144,6 +144,25 @@ def test_render_commits_a_candidate(workspace: Workspace) -> None:
     assert list(workspace.staging_dir.iterdir()) == []
 
 
+def test_a_style_paints_the_image_and_keeps_the_render(workspace: Workspace) -> None:
+    from jingyu.views import render_view
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": "ink"}
+    candidate = _render(workspace, scene).candidate
+    assert CandidateStore(workspace).verify(candidate) == []
+    assert "render.png" in candidate.receipt["files"]
+    with (
+        Image.open(candidate.image_path) as styled,
+        Image.open(candidate.file("render.png")) as photo,
+    ):
+        assert styled.size == photo.size
+        assert styled.tobytes() != photo.convert(styled.mode).tobytes()
+    assert render_view(candidate, "render").png != render_view(candidate, "full").png
+    plain = _render(workspace, minimal_scene()).candidate
+    assert "render.png" not in plain.receipt["files"]
+
+
 def test_final_quality_keeps_the_scene_resolution(workspace: Workspace) -> None:
     scene = minimal_scene()
     scene["render"]["resolution"] = [64, 48]

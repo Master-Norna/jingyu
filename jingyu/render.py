@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from PIL import Image
+
 from . import __version__
 from .bridge import DEFAULT_TIMEOUT_S, BlenderRuntime, discover_runtime, run_worker
 from .bridge.runner import LOG_NAME
@@ -19,6 +21,7 @@ from .candidate import (
     IMAGE_NAME,
     LIGHT_MAP_NAME,
     LIGHT_MASK_NAME,
+    RENDER_NAME,
     SCENE_NAME,
     Candidate,
     CandidateStore,
@@ -31,6 +34,7 @@ from .errors import Issue, JingyuError
 from .frame import check_frame
 from .scene import validate_scene
 from .scene.warnings import drop_accepted
+from .style import apply_style
 from .workspace import Workspace
 
 Quality = Literal["preview", "final"]
@@ -109,6 +113,7 @@ def render_scene(
             light_map,
         )
         warnings = [*result.warnings, *drop_accepted(frame_warnings, normalized)]
+        _paint(staging, normalized["render"]["style"], id_map is not None)
 
         identity = scene_identity(normalized)
         receipt = {
@@ -130,6 +135,23 @@ def render_scene(
         shutil.rmtree(staging, ignore_errors=True)
         raise
     return RenderOutcome(candidate, tuple(warnings))
+
+
+def _paint(staging: Path, style: Mapping[str, Any], has_mask: bool) -> None:
+    """Apply the scene's style; the photographic render is kept as render.png."""
+
+    if style["preset"] == "none":
+        return
+    image_path = staging / IMAGE_NAME
+    photo = staging / RENDER_NAME
+    image_path.replace(photo)
+    with Image.open(photo) as image:
+        image.load()
+        mask = None
+        if has_mask:
+            with Image.open(staging / ID_MASK_NAME) as opened:
+                mask = opened.convert("RGBA")
+        apply_style(image, mask, style).save(image_path)
 
 
 def _unused_candidate_id(store: CandidateStore, scene_sha256: str) -> str:

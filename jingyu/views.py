@@ -17,13 +17,14 @@ from typing import Any
 
 from PIL import Image, ImageFilter, ImageOps
 
-from .candidate import Candidate
+from .candidate import RENDER_NAME, Candidate
 from .errors import JingyuError
 from .lighting import LightMap
 from .locate import IdMask
 
 VIEWS: dict[str, str] = {
-    "full": "The render itself.",
+    "full": "The image (styled, when the scene has a style).",
+    "render": "The photographic render before any style was applied.",
     "glance": "A small thumbnail: what the image says at first sight (J7.1 one).",
     "flip": "Mirrored left to right: fresh eyes for balance and habituation (J7.1 one).",
     "squint": "Details blurred away: only big masses of value and colour remain (J7.1 two).",
@@ -52,6 +53,15 @@ class RenderedView:
 
 def _open_rgb(candidate: Candidate) -> Image.Image:
     with Image.open(candidate.image_path) as image:
+        image.load()
+        return image.convert("RGB")
+
+
+def _open_render(candidate: Candidate) -> Image.Image:
+    path = candidate.file(RENDER_NAME)
+    if not path.is_file():
+        return _open_rgb(candidate)
+    with Image.open(path) as image:
         image.load()
         return image.convert("RGB")
 
@@ -93,6 +103,7 @@ def render_view(
 
     builders: dict[str, Callable[[], tuple[Image.Image, dict[str, Any]]]] = {
         "full": lambda: (_open_rgb(candidate), {}),
+        "render": lambda: (_open_render(candidate), {}),
         "glance": lambda: (_fit(_open_rgb(candidate), GLANCE_SIZE), {}),
         "flip": lambda: (ImageOps.mirror(_open_rgb(candidate)), {}),
         "squint": lambda: _squint(candidate),

@@ -11,6 +11,7 @@ from .. import __version__, conventions
 from .. import constitution as constitution_mod
 from ..candidate import CandidateStore
 from ..canonical_json import load_file_strict, pretty_bytes
+from ..charter import CHARTER_SCHEMA_ID, check_charter, validate_charter
 from ..doctor import diagnose
 from ..environments import ENVIRONMENTS
 from ..errors import ERROR_CODES, JingyuError
@@ -178,6 +179,9 @@ GUIDE_WORKFLOW = [
     "object's rendered colour next to its material colour, so colour drift from warm or "
     "cool light shows as a number; view any image with a region to see details up "
     "close.",
+    "For a painted look set render.style (ink, watercolor, oil, cel); the photographic "
+    "render stays beside it (view render). For a series, keep a picture charter file and "
+    "check_charter each picture against it: it answers with questions, not a score.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -539,6 +543,22 @@ def _describe_light(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     candidate = _store(ctx).open(args["candidate_id"])
     summary = LightMap.load(candidate).summary()
     return ToolResult({"candidate_id": candidate.id, **summary})
+
+
+def _check_charter(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    candidate = _store(ctx).open(args["candidate_id"])
+    path = ctx.workspace.resolve(args["charter_path"])
+    try:
+        document = load_file_strict(path)
+    except OSError as exc:
+        reason = exc.strerror or str(exc)
+        raise JingyuError("io.unreadable", f"cannot read {args['charter_path']}: {reason}") from exc
+    charter = validate_charter(document)
+    layout = IdMask.load(candidate).layout() if candidate.has_id_mask else None
+    with Image.open(candidate.image_path) as image:
+        image.load()
+        report = check_charter(charter, image, candidate.scene(), layout)
+    return ToolResult({"candidate_id": candidate.id, **report})
 
 
 def _get_constitution(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -1157,6 +1177,40 @@ REGISTRY.add(
             ["candidate_id", "other_candidate_id", "scene_changes"],
         ),
         handler=_diff_candidates,
+    )
+)
+REGISTRY.add(
+    Tool(
+        name="check_charter",
+        title="Hold a render against the series' picture charter",
+        description=(
+            "A picture charter (a " + CHARTER_SCHEMA_ID + " JSON file in the workspace) "
+            "writes down what a series of pictures shares: subject, composition skeleton, "
+            "palette, value key, contrast, light mood, style. This measures a candidate "
+            "against it (main colours, value key, contrast, where the subject sits) and "
+            "turns every difference into a question. It gives no score: answer the "
+            "questions by looking at the picture."
+        ),
+        input_schema=_input(
+            {
+                "candidate_id": _CANDIDATE_ID,
+                "charter_path": {
+                    "type": "string",
+                    "description": "Workspace path of the charter JSON file.",
+                },
+            },
+            ["candidate_id", "charter_path"],
+        ),
+        output_schema=_output(
+            {
+                "candidate_id": _STRING,
+                "charter": _STRING,
+                "facts": _ANY_OBJECT,
+                "questions": {"type": "array", "items": _STRING},
+            },
+            ["candidate_id", "facts", "questions"],
+        ),
+        handler=_check_charter,
     )
 )
 REGISTRY.add(
