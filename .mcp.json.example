@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jingyu": {
+      "command": "jingyu-mcp",
+      "args": ["--workspace", "./workspace"]
+    }
+  }
+}

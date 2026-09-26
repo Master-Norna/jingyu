@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint, types and generated references
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[mcp,dev]"
+          python -m pip check
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Mypy
+        run: mypy
+      - name: Generated references are fresh
+        run: python -m jingyu.reference --check
+
+  unit:
+    name: Unit / ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.14"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[mcp,dev]"
+          python -m pip check
+      - name: Test (no Blender)
+        env:
+          PYTHONUTF8: "1"
+        run: python -m pytest -q -m "not blender"
+
+  blender:
+    name: Blender integration / bpy 5.0.1
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install system libraries for bpy (Mesa provides software OpenGL/EGL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libegl1 libegl-mesa0 libgl1 libgl1-mesa-dri libglx-mesa0 \
+            libsm6 libxext6 libxfixes3 libxi6 libxkbcommon0 libxrender1 libxxf86vm1
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[mcp,dev,blender]"
+          python -m pip check
+      - name: Doctor (every engine)
+        run: jingyu doctor --deep
+      - name: Test (Blender)
+        env:
+          JINGYU_TEST_GPU_ENGINES: "1"
+        run: python -m pytest -q -m blender
+      - name: Render the example scenes
+        run: |
+          workspace="$RUNNER_TEMP/jingyu-ci"
+          for scene in examples/scenes/*.json; do
+            jingyu --workspace "$workspace" render "$scene"
+          done
+          mkdir -p "$RUNNER_TEMP/renders"
+          for candidate in "$workspace"/candidates/c_*; do
+            cp "$candidate/image.png" "$RUNNER_TEMP/renders/$(basename "$candidate").png"
+          done
+      - uses: actions/upload-artifact@v5
+        with:
+          name: example-renders
+          path: ${{ runner.temp }}/renders
+          if-no-files-found: error
+
+  wheel:
+    name: Wheel / isolated install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Build wheel and dependency wheelhouse
+        run: python -m pip wheel . --wheel-dir "$RUNNER_TEMP/wheelhouse"
+      - name: Install only from the wheelhouse and smoke-test
+        run: |
+          package="$(find "$RUNNER_TEMP/wheelhouse" -maxdepth 1 -name 'jingyu-*.whl' -print -quit)"
+          test -n "$package"
+          python -m venv "$RUNNER_TEMP/isolated"
+          "$RUNNER_TEMP/isolated/bin/python" -m pip install --no-index \
+            --find-links "$RUNNER_TEMP/wheelhouse" "$package"
+          "$RUNNER_TEMP/isolated/bin/python" -m pip check
+          "$RUNNER_TEMP/isolated/bin/jingyu" --version
+          "$RUNNER_TEMP/isolated/bin/jingyu" call get_constitution --args '{"ids": ["J1"]}'
+          "$RUNNER_TEMP/isolated/bin/jingyu-mcp" || test $? -eq 2

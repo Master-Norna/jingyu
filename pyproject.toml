@@ -1,0 +1,96 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jingyu"
+version = "0.1.0"
+description = "Controllable, editable image making from declarative 3D scenes rendered by Blender"
+readme = "README.md"
+authors = [{name = "Nor.na"}]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.11"
+keywords = ["image", "blender", "3d", "rendering", "mcp", "procedural"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Multimedia :: Graphics :: 3D Rendering"
+]
+dependencies = [
+  "jsonschema==4.26.0",
+  "pillow==12.3.0"
+]
+
+# The MCP server is optional; `jingyu-mcp` explains how to install it when missing.
+# `blender` installs the bpy module (Blender as a Python module, Python 3.11 only)
+# for machines without a Blender installation.
+[project.optional-dependencies]
+mcp = ["mcp==2.0.0"]
+blender = ["bpy==5.0.1; python_version == '3.11'"]
+dev = [
+  "mypy==2.3.1",
+  "pytest>=8,<9",
+  "ruff==0.16.9"
+]
+
+[project.scripts]
+jingyu = "jingyu.cli:main"
+jingyu-mcp = "jingyu.mcp_entry:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["jingyu*"]
+
+[tool.setuptools.package-data]
+jingyu = ["resources/constitution/*.md", "py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-config --strict-markers"
+markers = [
+  "blender: needs a Blender runtime (executable or bpy module); skipped when none is found, fails when one is found but broken",
+  "gpu_engines: renders with EEVEE or Workbench, which need a GPU or a software OpenGL driver",
+  "mcp: needs the optional mcp extra"
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "PTH"]
+ignore = [
+  "RUF001",  # full-width CJK punctuation is intentional in Chinese text
+  "RUF002",
+  "RUF003",
+  "SIM108",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PTH"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+packages = ["jingyu"]
+
+[[tool.mypy.overrides]]
+module = ["bpy", "bpy.*", "bmesh", "mathutils", "jsonschema", "jsonschema.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["jingyu.blender.*"]
+disallow_any_unimported = false
+warn_return_any = false

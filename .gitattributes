@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.exr binary
+*.blend binary
+*.py text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+jingyu/resources/constitution/*.md text eol=lf
+docs/视觉宪法/*.md text eol=lf

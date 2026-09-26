@@ -1,0 +1,45 @@
+{
+  "schema": "jingyu.scene.v1",
+  "id": "eight-vessels",
+  "title": "八件器物：同一个器皿函数，八行参数",
+  "notes": "杯、碗、花瓶、酒瓶、玻璃罐、铜罐、银瓶、玻璃杯。几何全部是 vessel，差别只在参数值。",
+  "world": {"color": "#6e6e6e", "strength": 0.5},
+  "materials": [
+    {"id": "cup-glaze", "family": "ceramic", "color": "#f4f2ee", "gloss": 0.3},
+    {"id": "bowl-glaze", "family": "ceramic", "color": "#7fa6c4", "gloss": 0.9},
+    {"id": "vase-glaze", "family": "ceramic", "color": "#e8a592", "gloss": 0.95},
+    {"id": "green-glass", "family": "glass", "tint": "#9cd3a8"},
+    {"id": "clear-glass", "family": "glass"},
+    {"id": "copper", "family": "metal", "metal": "copper", "polish": 0.72},
+    {"id": "silver", "family": "metal", "metal": "silver", "polish": 0.95},
+    {"id": "tabletop", "family": "plastic", "color": "#c2c2c2", "gloss": 0.05}
+  ],
+  "objects": [
+    {"id": "floor", "geometry": {"op": "plane", "size": [20, 20]}, "material": "tabletop"},
+    {"id": "cup", "material": "cup-glaze", "location": [-0.805, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.095, "base_radius": 0.030, "belly_radius": 0.036, "belly_at": 0.5, "neck_radius": 0.040, "neck_at": 0.9, "lip_radius": 0.041}},
+    {"id": "bowl", "material": "bowl-glaze", "location": [-0.582, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.055, "base_radius": 0.030, "belly_radius": 0.060, "belly_at": 0.45, "neck_radius": 0.078, "neck_at": 0.85, "lip_radius": 0.082}},
+    {"id": "vase", "material": "vase-glaze", "location": [-0.315, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.30, "base_radius": 0.045, "belly_radius": 0.085, "belly_at": 0.3, "neck_radius": 0.022, "neck_at": 0.9, "lip_radius": 0.030}},
+    {"id": "bottle", "material": "green-glass", "location": [-0.099, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.28, "base_radius": 0.030, "belly_radius": 0.031, "belly_at": 0.55, "neck_radius": 0.012, "neck_at": 0.85, "lip_radius": 0.013}},
+    {"id": "jar", "material": "clear-glass", "location": [0.084, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.16, "base_radius": 0.042, "belly_radius": 0.052, "belly_at": 0.45, "neck_radius": 0.042, "neck_at": 0.85, "lip_radius": 0.046, "thickness": 0.005}},
+    {"id": "pot", "material": "copper", "location": [0.311, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.15, "base_radius": 0.055, "belly_radius": 0.068, "belly_at": 0.5, "neck_radius": 0.070, "neck_at": 0.9, "lip_radius": 0.075}},
+    {"id": "silver-vase", "material": "silver", "location": [0.576, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.24, "base_radius": 0.045, "belly_radius": 0.090, "belly_at": 0.4, "neck_radius": 0.042, "neck_at": 0.85, "lip_radius": 0.058}},
+    {"id": "tumbler", "material": "clear-glass", "location": [0.805, 0, 0],
+     "geometry": {"op": "vessel", "height": 0.13, "base_radius": 0.034, "belly_radius": 0.036, "belly_at": 0.5, "neck_radius": 0.038, "neck_at": 0.9, "lip_radius": 0.039}}
+  ],
+  "lights": [
+    {"id": "key", "kind": "area", "location": [-1.5, -2, 2], "look_at": [0, 0, 0.1], "power_w": 320, "size": 2},
+    {"id": "fill", "kind": "area", "location": [2, -1.5, 1.2], "look_at": [0, 0, 0.1], "power_w": 110, "size": 1.5},
+    {"id": "top", "kind": "area", "location": [0, 0.5, 2.5], "look_at": [0, 0, 0], "power_w": 160, "size": 2}
+  ],
+  "cameras": [
+    {"id": "main", "location": [0, -2.3, 0.3], "look_at": [0, 0, 0.13], "lens_mm": 45}
+  ],
+  "render": {"camera": "main", "resolution": [1760, 720], "samples": 128, "view_transform": "agx", "exposure": -0.3}
+}

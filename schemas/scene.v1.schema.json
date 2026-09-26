@@ -1,0 +1,1432 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jingyu:schema:scene:v1",
+  "title": "Jingyu scene description v1",
+  "description": "A declarative scene: generator calls for geometry and materials, plus lights, cameras and render settings. Lengths in metres, angles in degrees, Z up, colours as sRGB hex. Objects stand on their origin.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "cameras",
+    "render"
+  ],
+  "properties": {
+    "schema": {
+      "const": "jingyu.scene.v1",
+      "description": "Format and version marker."
+    },
+    "id": {
+      "$ref": "#/$defs/id"
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Human title."
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 8000,
+      "description": "Free-form intent and context; never affects rendering."
+    },
+    "world": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "properties": {
+        "color": {
+          "$ref": "#/$defs/color",
+          "default": "#404040"
+        },
+        "strength": {
+          "type": "number",
+          "description": "Background light multiplier.",
+          "default": 1.0,
+          "minimum": 0.0
+        }
+      }
+    },
+    "materials": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/material"
+      },
+      "maxItems": 4096,
+      "default": []
+    },
+    "objects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/object"
+      },
+      "maxItems": 65536,
+      "default": []
+    },
+    "lights": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/light"
+      },
+      "maxItems": 1024,
+      "default": []
+    },
+    "cameras": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/camera"
+      },
+      "minItems": 1,
+      "maxItems": 256
+    },
+    "render": {
+      "$ref": "#/$defs/render"
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+      "description": "Lowercase ASCII slug."
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9a-fA-F]{6}$",
+      "description": "sRGB hex #rrggbb."
+    },
+    "geometry": {
+      "type": "object",
+      "required": [
+        "op"
+      ],
+      "properties": {
+        "op": {
+          "enum": [
+            "box",
+            "plane",
+            "sphere",
+            "cylinder",
+            "cone",
+            "lathe",
+            "vessel"
+          ],
+          "description": "Which geometry operator to use."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "box"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "box",
+            "description": "Axis-aligned box standing on its origin.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "box",
+                "description": "Axis-aligned box standing on its origin."
+              },
+              "size": {
+                "type": "array",
+                "description": "Width (x), depth (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "plane"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "plane",
+            "description": "Flat rectangle in the XY plane, centred on its origin, facing +Z.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "plane",
+                "description": "Flat rectangle in the XY plane, centred on its origin, facing +Z."
+              },
+              "size": {
+                "type": "array",
+                "description": "Width (x) and depth (y) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 2,
+                "maxItems": 2
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "sphere"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "sphere",
+            "description": "UV sphere resting on its origin (its lowest point).",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "radius"
+            ],
+            "properties": {
+              "op": {
+                "const": "sphere",
+                "description": "UV sphere resting on its origin (its lowest point)."
+              },
+              "radius": {
+                "type": "number",
+                "description": "Radius in metres.",
+                "exclusiveMinimum": 0
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Number of segments around the axis; more is smoother and heavier.",
+                "minimum": 3,
+                "maximum": 1024,
+                "default": 64
+              },
+              "rings": {
+                "type": "integer",
+                "description": "Number of rings from pole to pole.",
+                "minimum": 2,
+                "maximum": 512,
+                "default": 32
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "cylinder"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "cylinder",
+            "description": "Closed cylinder standing on its origin.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "radius",
+              "height"
+            ],
+            "properties": {
+              "op": {
+                "const": "cylinder",
+                "description": "Closed cylinder standing on its origin."
+              },
+              "radius": {
+                "type": "number",
+                "description": "Radius in metres.",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "type": "number",
+                "description": "Height in metres.",
+                "exclusiveMinimum": 0
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Number of segments around the axis; more is smoother and heavier.",
+                "minimum": 3,
+                "maximum": 1024,
+                "default": 64
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "cone"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "cone",
+            "description": "Cone or truncated cone standing on its origin.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "radius",
+              "height"
+            ],
+            "properties": {
+              "op": {
+                "const": "cone",
+                "description": "Cone or truncated cone standing on its origin."
+              },
+              "radius": {
+                "type": "number",
+                "description": "Bottom radius in metres.",
+                "exclusiveMinimum": 0
+              },
+              "height": {
+                "type": "number",
+                "description": "Height in metres.",
+                "exclusiveMinimum": 0
+              },
+              "top_radius": {
+                "type": "number",
+                "description": "Top radius in metres; 0 makes a point.",
+                "minimum": 0,
+                "default": 0.0
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Number of segments around the axis; more is smoother and heavier.",
+                "minimum": 3,
+                "maximum": 1024,
+                "default": 64
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "lathe"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "lathe",
+            "description": "Revolve an (r, z) profile around the Z axis. thickness 0 makes a solid; thickness > 0 makes an open-topped shell with a closed floor.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "profile"
+            ],
+            "properties": {
+              "op": {
+                "const": "lathe",
+                "description": "Revolve an (r, z) profile around the Z axis. thickness 0 makes a solid; thickness > 0 makes an open-topped shell with a closed floor."
+              },
+              "profile": {
+                "type": "array",
+                "description": "Points [r, z] in metres from the bottom outer edge upward. r >= 0. A solid is closed to the axis automatically at both ends.",
+                "items": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                "minItems": 2,
+                "maxItems": 4096
+              },
+              "thickness": {
+                "type": "number",
+                "description": "Wall thickness in metres; 0 for a solid.",
+                "minimum": 0,
+                "default": 0.0
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Number of segments around the axis; more is smoother and heavier.",
+                "minimum": 3,
+                "maximum": 1024,
+                "default": 64
+              },
+              "sharp_angle": {
+                "type": "number",
+                "description": "Profile corners turning more than this many degrees are shaded crisply.",
+                "minimum": 0.0,
+                "maximum": 180.0,
+                "default": 30.0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "vessel"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "vessel",
+            "description": "Parametric vessel family (cup, bowl, vase, bottle, jar, pot): a lathe whose outer wall passes smoothly through base, belly, neck and lip rings.",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "vessel",
+                "description": "Parametric vessel family (cup, bowl, vase, bottle, jar, pot): a lathe whose outer wall passes smoothly through base, belly, neck and lip rings."
+              },
+              "height": {
+                "type": "number",
+                "description": "Total height in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.25
+              },
+              "base_radius": {
+                "type": "number",
+                "description": "Radius at the foot, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.05
+              },
+              "belly_radius": {
+                "type": "number",
+                "description": "Radius at the belly, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.08
+              },
+              "belly_at": {
+                "type": "number",
+                "description": "Height of the belly as a fraction of the height.",
+                "maximum": 1,
+                "exclusiveMinimum": 0,
+                "default": 0.4
+              },
+              "neck_radius": {
+                "type": "number",
+                "description": "Radius at the neck, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.035
+              },
+              "neck_at": {
+                "type": "number",
+                "description": "Height of the neck as a fraction of the height.",
+                "maximum": 1,
+                "exclusiveMinimum": 0,
+                "default": 0.8
+              },
+              "lip_radius": {
+                "type": "number",
+                "description": "Radius at the rim, metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.045
+              },
+              "thickness": {
+                "type": "number",
+                "description": "Wall and floor thickness in metres (open vessels only).",
+                "exclusiveMinimum": 0,
+                "default": 0.004
+              },
+              "open": {
+                "type": "boolean",
+                "description": "true: hollow with an open top; false: a closed solid.",
+                "default": true
+              },
+              "segments": {
+                "type": "integer",
+                "description": "Number of segments around the axis.",
+                "minimum": 3,
+                "maximum": 1024,
+                "default": 96
+              },
+              "profile_samples": {
+                "type": "integer",
+                "description": "Number of points sampled along the wall.",
+                "minimum": 4,
+                "maximum": 1024,
+                "default": 64
+              },
+              "sharp_angle": {
+                "type": "number",
+                "description": "Profile corners turning more than this many degrees are shaded crisply.",
+                "minimum": 0.0,
+                "maximum": 180.0,
+                "default": 30.0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "material": {
+      "type": "object",
+      "required": [
+        "family"
+      ],
+      "properties": {
+        "family": {
+          "enum": [
+            "ceramic",
+            "glass",
+            "metal",
+            "plastic",
+            "principled"
+          ],
+          "description": "Which material family to use."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "ceramic"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "ceramic",
+            "description": "Fired clay: matte bisque (gloss 0) to a glassy glaze (gloss 1).",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "ceramic",
+                "description": "Fired clay: matte bisque (gloss 0) to a glassy glaze (gloss 1)."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Body or glaze colour. sRGB hex #rrggbb.",
+                "default": "#f2efe8"
+              },
+              "gloss": {
+                "type": "number",
+                "description": "Glaze gloss from matte (0) to mirror-like (1).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.8
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "glass"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "glass",
+            "description": "Transparent refractive glass, clear or tinted, polished or frosted.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "glass",
+                "description": "Transparent refractive glass, clear or tinted, polished or frosted."
+              },
+              "tint": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Transmitted colour; white is clear. sRGB hex #rrggbb.",
+                "default": "#ffffff"
+              },
+              "frost": {
+                "type": "number",
+                "description": "Surface frosting from polished (0) to heavily frosted (1).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "ior": {
+                "type": "number",
+                "description": "Index of refraction.",
+                "minimum": 1.0,
+                "maximum": 4.0,
+                "default": 1.5
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "metal"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "metal",
+            "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "metal",
+                "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished."
+              },
+              "metal": {
+                "type": "string",
+                "enum": [
+                  "aluminum",
+                  "brass",
+                  "chrome",
+                  "copper",
+                  "gold",
+                  "iron",
+                  "nickel",
+                  "silver",
+                  "titanium"
+                ],
+                "description": "Which metal; sets the physically measured reflectance colour.",
+                "default": "silver"
+              },
+              "polish": {
+                "type": "number",
+                "description": "From dull (0) to mirror-polished (1).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.8
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "plastic"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "plastic",
+            "description": "Opaque dielectric such as plastic, paint or plaster, matte to glossy.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "plastic",
+                "description": "Opaque dielectric such as plastic, paint or plaster, matte to glossy."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Surface colour. sRGB hex #rrggbb.",
+                "default": "#d0d0d0"
+              },
+              "gloss": {
+                "type": "number",
+                "description": "From matte (0) to glossy (1).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "principled"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "principled",
+            "description": "Direct physically based parameters; the escape hatch when no family fits.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "principled",
+                "description": "Direct physically based parameters; the escape hatch when no family fits."
+              },
+              "base_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Surface colour. sRGB hex #rrggbb.",
+                "default": "#bfbfbf"
+              },
+              "metallic": {
+                "type": "number",
+                "description": "0 dielectric, 1 metal.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "roughness": {
+                "type": "number",
+                "description": "0 mirror-smooth, 1 fully diffuse.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.5
+              },
+              "ior": {
+                "type": "number",
+                "description": "Index of refraction.",
+                "minimum": 1.0,
+                "maximum": 4.0,
+                "default": 1.5
+              },
+              "transmission": {
+                "type": "number",
+                "description": "0 opaque, 1 fully transmissive (glass-like).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "coat_weight": {
+                "type": "number",
+                "description": "Strength of a clear coat layer.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "coat_roughness": {
+                "type": "number",
+                "description": "Roughness of the clear coat.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.03
+              },
+              "emission_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Emitted light colour. sRGB hex #rrggbb.",
+                "default": "#ffffff"
+              },
+              "emission_strength": {
+                "type": "number",
+                "description": "Emitted radiance multiplier; 0 emits nothing.",
+                "minimum": 0.0,
+                "default": 0.0
+              },
+              "alpha": {
+                "type": "number",
+                "description": "Opacity; 1 is fully opaque.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 1.0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              }
+            }
+          }
+        }
+      ]
+    },
+    "object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "geometry"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "geometry": {
+          "$ref": "#/$defs/geometry"
+        },
+        "material": {
+          "$ref": "#/$defs/id",
+          "description": "Id of an entry in materials; omitted means neutral grey."
+        },
+        "location": {
+          "type": "array",
+          "description": "Position of the object's origin in metres.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "rotation": {
+          "type": "array",
+          "description": "XYZ Euler rotation in degrees.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            0.0,
+            0.0,
+            0.0
+          ]
+        },
+        "scale": {
+          "type": "array",
+          "description": "Per-axis scale factors.",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "minItems": 3,
+          "maxItems": 3,
+          "default": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        },
+        "visible": {
+          "type": "boolean",
+          "default": true,
+          "description": "false keeps the object in the scene but out of the render."
+        }
+      }
+    },
+    "light": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "point",
+            "spot",
+            "area",
+            "sun"
+          ],
+          "description": "Which kind of light."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "point"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "location"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "const": "point"
+              },
+              "location": {
+                "type": "array",
+                "description": "Position in metres.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "color": {
+                "$ref": "#/$defs/color",
+                "default": "#ffffff"
+              },
+              "power_w": {
+                "type": "number",
+                "description": "Emitted power in watts.",
+                "default": 1000.0,
+                "minimum": 0.0
+              },
+              "radius": {
+                "type": "number",
+                "description": "Size of the emitting sphere in metres; larger is softer.",
+                "default": 0.1,
+                "minimum": 0.0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "spot"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "location"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "const": "spot"
+              },
+              "location": {
+                "type": "array",
+                "description": "Position in metres.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "color": {
+                "$ref": "#/$defs/color",
+                "default": "#ffffff"
+              },
+              "power_w": {
+                "type": "number",
+                "description": "Emitted power in watts.",
+                "default": 1000.0,
+                "minimum": 0.0
+              },
+              "radius": {
+                "type": "number",
+                "description": "Size of the emitting sphere in metres; larger is softer.",
+                "default": 0.1,
+                "minimum": 0.0
+              },
+              "spot_size": {
+                "type": "number",
+                "description": "Cone angle in degrees.",
+                "default": 45.0,
+                "exclusiveMinimum": 0.0,
+                "maximum": 180.0
+              },
+              "blend": {
+                "type": "number",
+                "description": "Edge softness of the cone, 0 to 1.",
+                "default": 0.15,
+                "minimum": 0.0,
+                "maximum": 1.0
+              },
+              "look_at": {
+                "type": "array",
+                "description": "Point in metres to aim at; the up direction stays +Z.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation": {
+                "type": "array",
+                "description": "XYZ Euler rotation in degrees.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "look_at"
+                ]
+              },
+              {
+                "required": [
+                  "rotation"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "area"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "location"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "const": "area"
+              },
+              "location": {
+                "type": "array",
+                "description": "Position in metres.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "color": {
+                "$ref": "#/$defs/color",
+                "default": "#ffffff"
+              },
+              "power_w": {
+                "type": "number",
+                "description": "Emitted power in watts.",
+                "default": 500.0,
+                "minimum": 0.0
+              },
+              "size": {
+                "type": "number",
+                "description": "Edge length of the square emitter in metres.",
+                "default": 1.0,
+                "exclusiveMinimum": 0.0
+              },
+              "look_at": {
+                "type": "array",
+                "description": "Point in metres to aim at; the up direction stays +Z.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation": {
+                "type": "array",
+                "description": "XYZ Euler rotation in degrees.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "look_at"
+                ]
+              },
+              {
+                "required": [
+                  "rotation"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sun"
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "kind",
+              "location"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "kind": {
+                "const": "sun"
+              },
+              "location": {
+                "type": "array",
+                "description": "Position in metres.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "color": {
+                "$ref": "#/$defs/color",
+                "default": "#ffffff"
+              },
+              "strength": {
+                "type": "number",
+                "description": "Irradiance in W/m^2 (Blender's sun strength).",
+                "default": 3.0,
+                "minimum": 0.0
+              },
+              "angle": {
+                "type": "number",
+                "description": "Apparent angular diameter in degrees; larger is softer.",
+                "default": 0.5,
+                "minimum": 0.0,
+                "maximum": 180.0
+              },
+              "look_at": {
+                "type": "array",
+                "description": "Point in metres to aim at; the up direction stays +Z.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "rotation": {
+                "type": "array",
+                "description": "XYZ Euler rotation in degrees.",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "look_at"
+                ]
+              },
+              {
+                "required": [
+                  "rotation"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "location"
+      ],
+      "oneOf": [
+        {
+          "required": [
+            "look_at"
+          ]
+        },
+        {
+          "required": [
+            "rotation"
+          ]
+        }
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "location": {
+          "type": "array",
+          "description": "Position in metres.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "look_at": {
+          "type": "array",
+          "description": "Point in metres to aim at; the up direction stays +Z.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "rotation": {
+          "type": "array",
+          "description": "XYZ Euler rotation in degrees.",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "projection": {
+          "enum": [
+            "perspective",
+            "orthographic"
+          ],
+          "default": "perspective",
+          "description": "Perspective or orthographic (parallel) projection."
+        },
+        "lens_mm": {
+          "type": "number",
+          "description": "Focal length in millimetres (perspective).",
+          "default": 50.0,
+          "exclusiveMinimum": 0.0
+        },
+        "sensor_width_mm": {
+          "type": "number",
+          "description": "Sensor width in millimetres.",
+          "default": 36.0,
+          "exclusiveMinimum": 0.0
+        },
+        "ortho_scale": {
+          "type": "number",
+          "description": "Visible width in metres (orthographic).",
+          "default": 4.0,
+          "exclusiveMinimum": 0.0
+        },
+        "clip_start": {
+          "type": "number",
+          "description": "Nearest visible distance in metres.",
+          "default": 0.05,
+          "exclusiveMinimum": 0.0
+        },
+        "clip_end": {
+          "type": "number",
+          "description": "Farthest visible distance in metres.",
+          "default": 500.0,
+          "exclusiveMinimum": 0.0
+        },
+        "shift": {
+          "type": "array",
+          "description": "Lens shift [x, y] as a fraction of the frame; keeps verticals straight.",
+          "items": {
+            "type": "number",
+            "minimum": -2,
+            "maximum": 2
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "default": [
+            0.0,
+            0.0
+          ]
+        }
+      }
+    },
+    "render": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "camera"
+      ],
+      "properties": {
+        "camera": {
+          "$ref": "#/$defs/id",
+          "description": "Id of the camera to render through."
+        },
+        "resolution": {
+          "type": "array",
+          "description": "Image width and height in pixels.",
+          "items": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 16384
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "default": [
+            1280,
+            720
+          ]
+        },
+        "engine": {
+          "enum": [
+            "cycles",
+            "eevee",
+            "workbench"
+          ],
+          "default": "cycles",
+          "description": "cycles: path traced; eevee: real-time (needs a GPU); workbench: preview shading."
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65536,
+          "default": 64,
+          "description": "Samples per pixel."
+        },
+        "denoise": {
+          "type": "boolean",
+          "default": true,
+          "description": "Denoise (cycles)."
+        },
+        "device": {
+          "enum": [
+            "auto",
+            "cpu",
+            "gpu"
+          ],
+          "default": "auto",
+          "description": "Cycles device; auto uses a GPU when one is usable."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647,
+          "default": 0,
+          "description": "Sampling seed; fixed for reproducibility."
+        },
+        "view_transform": {
+          "enum": [
+            "standard",
+            "agx",
+            "filmic",
+            "khronos_pbr_neutral"
+          ],
+          "default": "agx",
+          "description": "Tone mapping from scene light to display."
+        },
+        "exposure": {
+          "type": "number",
+          "description": "Exposure in stops.",
+          "default": 0.0,
+          "minimum": -10.0,
+          "maximum": 10.0
+        },
+        "transparent_background": {
+          "type": "boolean",
+          "default": false,
+          "description": "Render the world background as transparent."
+        }
+      }
+    }
+  }
+}

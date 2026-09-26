@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+.mcp.json
+# Workspaces: renders and views are local, never committed.
+candidates/
+views/
+/workspace/
+*.blend1

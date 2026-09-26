@@ -1,0 +1,67 @@
+name: 程序错误
+description: 安装、校验、渲染、候选、定位或 MCP 的可复现程序问题
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 景语版本或提交
+      placeholder: 0.1.0 / abcdef1
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: 环境
+      description: 操作系统、Python 版本，以及 `jingyu doctor` 报告的 Blender 运行时与版本。
+      placeholder: Windows 11 x64，Python 3.12，Blender 4.5.3（可执行文件）
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: 环节
+      options:
+        - 安装或环境诊断
+        - 场景描述与校验
+        - 几何算子或材质族
+        - 渲染（Blender worker）
+        - 候选、视图或定位
+        - MCP
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 最小复现步骤
+      description: 请附上能复现问题的最小场景描述（JSON），以及从全新命令行开始的最短步骤。
+      placeholder: |
+        1. 保存下面的场景为 scene.json
+        2. 运行 jingyu --workspace ./ws render scene.json
+        3. 看到 ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为和完整错误
+      description: 景语的错误输出是带 `code` 的 JSON，请完整贴出；渲染问题请附候选里的 `blender.log` 相关节选。
+      render: shell
+    validations:
+      required: true
+  - type: checkboxes
+    id: rights
+    attributes:
+      label: 分享边界
+      options:
+        - label: 我确认没有在公开 issue 中附带密钥、私人路径或无权公开的图片与模型。
+          required: true
