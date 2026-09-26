@@ -240,6 +240,17 @@ def _object_schema() -> dict[str, Any]:
             "material": _ref(
                 "id", description="Id of an entry in materials; omitted means neutral grey."
             ),
+            "part_materials": {
+                "type": "object",
+                "propertyNames": {"pattern": "^[a-z][a-z0-9_]{0,31}$"},
+                "additionalProperties": _ref("id"),
+                "description": (
+                    "Materials for the named parts of an assembled geometry (list_generators "
+                    'shows the parts of each op), e.g. {"top": "oak", "base": "steel"}. Parts '
+                    "not named wear material, or their own default (window panes are clear "
+                    "glass)."
+                ),
+            },
             "parent": copy.deepcopy(_PARENT),
             "accept_warnings": _accept_warnings(
                 "Warning codes that are intended for this object only, e.g. "
@@ -258,9 +269,10 @@ def _object_schema() -> dict[str, Any]:
             "rest_on": _ref(
                 "id",
                 description=(
-                    "Id of an object to rest on. The object keeps its x and y, and its "
-                    "height (location z) is computed so its lowest points touch the top "
-                    "surface of that object: a table top, the inside of a bowl."
+                    "Id of an object to rest on. The object keeps its x and y and falls from "
+                    "where it is onto the nearest surface of that object below it: a shelf "
+                    "board, the floor of a room, the inside of a bowl. Placed below all of "
+                    "them (at height 0, say), it lands on the topmost: a table top."
                 ),
             ),
             "location": _vec3("Position of the object's origin in metres.", [0.0, 0.0, 0.0]),

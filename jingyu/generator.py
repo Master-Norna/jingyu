@@ -46,10 +46,24 @@ class GeneratorDef(Generic[T]):
     run: Callable[[Mapping[str, Any]], T]
     check: Callable[[Mapping[str, Any]], list[ParamProblem]] = _no_problems
     examples: tuple[Mapping[str, Any], ...] = ()
+    #: Named parts of an assembled result (name -> what it is), each of which an
+    #: object may give its own material.
+    parts: Mapping[str, str] = field(default_factory=dict)
+    #: A default material (a material family call) for some parts, used unless the
+    #: object says otherwise: window panes are clear glass.
+    part_defaults: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     @property
     def required(self) -> tuple[str, ...]:
         return tuple(k for k, s in self.params.items() if "default" not in s)
+
+    def with_defaults(self, params: Mapping[str, Any]) -> dict[str, Any]:
+        """*params* with every missing default filled in, inside arrays of objects too."""
+
+        return {
+            **{k: copy.deepcopy(s["default"]) for k, s in self.params.items() if "default" in s},
+            **{k: _fill(v, self.params[k]) if k in self.params else v for k, v in params.items()},
+        }
 
     def branch_schema(self, discriminator: str) -> dict[str, Any]:
         """JSON Schema for ``{discriminator: name, **params}``."""
@@ -68,13 +82,26 @@ class GeneratorDef(Generic[T]):
         }
 
     def catalog_entry(self) -> dict[str, Any]:
-        return {
+        entry: dict[str, Any] = {
             "name": self.name,
             "summary": self.summary,
             "params": {k: copy.deepcopy(dict(v)) for k, v in self.params.items()},
             "required": list(self.required),
             "examples": [copy.deepcopy(dict(e)) for e in self.examples],
         }
+        if self.parts:
+            entry["parts"] = {
+                name: {
+                    "description": description,
+                    **(
+                        {"default_material": copy.deepcopy(dict(self.part_defaults[name]))}
+                        if name in self.part_defaults
+                        else {}
+                    ),
+                }
+                for name, description in self.parts.items()
+            }
+        return entry
 
 
 @dataclass
@@ -148,7 +175,23 @@ class GeneratorRegistry(Generic[T]):
 
         definition = self.get(str(spec[self.discriminator]))
         params = {k: v for k, v in spec.items() if k != self.discriminator}
-        return definition.run(params)
+        return definition.run(definition.with_defaults(params))
+
+
+def _fill(value: Any, schema: Mapping[str, Any]) -> Any:
+    """Fill defaults of a parameter value: object properties, and array items."""
+
+    if isinstance(value, dict) and "properties" in schema:
+        filled = {
+            k: copy.deepcopy(s["default"])
+            for k, s in schema["properties"].items()
+            if "default" in s and k not in value
+        }
+        filled.update({k: _fill(v, schema["properties"].get(k, {})) for k, v in value.items()})
+        return filled
+    if isinstance(value, list) and isinstance(schema.get("items"), Mapping):
+        return [_fill(item, schema["items"]) for item in value]
+    return value
 
 
 def discriminated_union(

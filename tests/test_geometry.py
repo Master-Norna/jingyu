@@ -13,17 +13,24 @@ from jingyu.geometry import GEOMETRY, MeshData
 from jingyu.geometry.curves import linspace, pchip, smooth_monotone
 from jingyu.geometry.lathe import close_solid, revolve, shell
 from jingyu.geometry.ops import vessel_profile
+from jingyu.scene.normalize import apply_defaults
 
 #: Flat shapes are single-sided surfaces, not solids.
 FLAT_OPS = {"plane"}
+#: A room stands on its floor surface: the floor slab lies below the origin.
+ORIGIN_ON_FLOOR = {"room"}
 
 
 def _defaults(definition: GeneratorDef[Any]) -> dict[str, Any]:
-    return {k: s["default"] for k, s in definition.params.items() if "default" in s}
+    return _params(definition, {})
 
 
 def _params(definition: GeneratorDef[Any], example: Mapping[str, Any]) -> dict[str, Any]:
-    return {**_defaults(definition), **{k: v for k, v in example.items() if k != "op"}}
+    """Parameters as a scene hands them to a generator: every default filled, nested too."""
+
+    schema = definition.branch_schema("op")
+    filled = apply_defaults({"op": definition.name, **example}, schema, schema)
+    return {k: v for k, v in filled.items() if k != "op"}
 
 
 def _cases() -> list[Any]:
@@ -70,7 +77,13 @@ def test_ops_produce_valid_meshes_from_defaults_and_examples(
     assert mesh.is_closed_manifold()
     assert mesh.signed_volume() > 0
     # Solids stand on their origin.
-    assert mesh.bounds()[0][2] == pytest.approx(0.0, abs=1e-12)
+    if name in ORIGIN_ON_FLOOR:
+        assert mesh.bounds()[0][2] == pytest.approx(-params["slab_thickness"] * params["floor"])
+    else:
+        assert mesh.bounds()[0][2] == pytest.approx(0.0, abs=1e-12)
+    if mesh.parts:
+        assert set(mesh.parts) == set(definition.parts)
+        assert len(mesh.face_parts) == len(mesh.faces)
 
 
 def test_registry_run_dispatches_on_op() -> None:
@@ -368,7 +381,136 @@ def test_wall_with_openings_is_a_closed_solid_with_the_right_volume() -> None:
     ],
 )
 def test_wall_check_rejects_bad_openings(openings: list[dict[str, float]], message: str) -> None:
-    params = {"size": [4.0, 0.15, 2.6], "openings": openings}
-    problems = GEOMETRY.get("wall").check(params)
+    wall = GEOMETRY.get("wall")
+    problems = wall.check(wall.with_defaults({"size": [4.0, 0.15, 2.6], "openings": openings}))
     assert [p[0] for p in problems] == ["openings"]
     assert message in problems[0][1]
+
+
+# ----------------------------------------------------------------- assemblies
+
+
+def _faces_of(mesh: MeshData, part: str) -> list[int]:
+    return [i for i, p in enumerate(mesh.face_parts) if mesh.parts[p] == part]
+
+
+def test_framed_glazed_openings_have_parts_and_a_clear_portal() -> None:
+    mesh = GEOMETRY.run(
+        {
+            "op": "wall",
+            "size": [3.0, 0.2, 2.6],
+            "openings": [
+                {"x": 0.5, "sill": 0.9, "width": 1.0, "height": 1.2, "frame": 0.06, "glass": True},
+                {"x": -0.8, "sill": 0.0, "width": 0.9, "height": 2.1, "frame": 0.05},
+            ],
+        }
+    )
+    assert mesh.is_closed_manifold()
+    assert mesh.parts == ("walls", "frames", "glass")
+    assert _faces_of(mesh, "frames") and len(_faces_of(mesh, "glass")) == 6
+    window, door = mesh.portals
+    # The clear opening lies inside the frame; a door has no frame across its threshold.
+    assert window.half_width[0] == pytest.approx(0.5 - 0.06)
+    assert window.half_height[2] == pytest.approx(0.6 - 0.06)
+    assert door.centre[2] - door.half_height[2] == pytest.approx(0.0)
+    assert door.half_height[2] == pytest.approx((2.1 - 0.05) / 2)
+
+
+def test_a_frame_wider_than_its_opening_is_rejected() -> None:
+    wall = GEOMETRY.get("wall")
+    params = wall.with_defaults(
+        {
+            "size": [3, 0.2, 2.6],
+            "openings": [{"x": 0, "sill": 1, "width": 0.1, "height": 1, "frame": 0.06}],
+        }
+    )
+    assert "fills the whole opening" in wall.check(params)[0][1]
+
+
+def test_a_room_has_named_walls_and_openings_keyed_in_order() -> None:
+    mesh = GEOMETRY.run(
+        {
+            "op": "room",
+            "size": [4.0, 5.0, 2.7],
+            "openings": [
+                {"wall": "right", "x": 0.5, "sill": 0.9, "width": 1.0, "height": 1.2},
+                {
+                    "wall": "left",
+                    "x": -1.0,
+                    "sill": 0.9,
+                    "width": 1.2,
+                    "height": 1.3,
+                    "glass": True,
+                },
+                {"wall": "front", "x": 1.0, "sill": 0.0, "width": 0.9, "height": 2.1},
+            ],
+        }
+    )
+    assert mesh.is_closed_manifold()
+    assert [p.key for p in mesh.portals] == ["openings/0", "openings/1", "openings/2"]
+    right, left, front = mesh.portals
+    assert right.centre[0] == pytest.approx(2.0 + 0.075)
+    # Seen from inside, x runs to the right: on the right (+x) wall that is -y.
+    assert right.centre[1] == pytest.approx(-0.5)
+    assert left.centre[0] == pytest.approx(-2.075) and left.centre[1] == pytest.approx(-1.0)
+    assert front.centre[1] == pytest.approx(-2.575) and front.centre[0] == pytest.approx(-1.0)
+    (_, _, z0), (_, _, z1) = mesh.bounds()
+    assert (z0, z1) == pytest.approx((-0.12, 2.7 + 0.12))
+    assert _faces_of(mesh, "glass")
+
+
+def test_a_room_can_leave_out_its_ceiling_and_floor() -> None:
+    mesh = GEOMETRY.run({"op": "room", "size": [3, 3, 2.5], "ceiling": False, "floor": False})
+    assert not _faces_of(mesh, "ceiling") and not _faces_of(mesh, "floor")
+    assert mesh.bounds()[1][2] == pytest.approx(2.5)
+
+
+@pytest.mark.parametrize("legs", ["square", "round", "tapered"])
+def test_table_top_sits_at_the_given_height(legs: str) -> None:
+    mesh = GEOMETRY.run({"op": "table", "size": [1.2, 0.7, 0.74], "legs": legs})
+    (x0, y0, z0), (x1, y1, z1) = mesh.bounds()
+    assert (x1 - x0, y1 - y0, z0, z1) == pytest.approx((1.2, 0.7, 0.0, 0.74))
+    top = _faces_of(mesh, "top")
+    assert min(mesh.vertices[i][2] for f in top for i in mesh.faces[f]) == pytest.approx(
+        0.74 - 0.035
+    )
+
+
+def test_chair_back_rises_above_the_seat_on_the_plus_y_side() -> None:
+    mesh = GEOMETRY.run({"op": "chair", "seat_height": 0.46, "back_height": 0.4})
+    back = [mesh.vertices[i] for f in _faces_of(mesh, "back") for i in mesh.faces[f]]
+    assert max(v[2] for v in back) == pytest.approx(0.86)
+    assert min(v[1] for v in back) > 0.1
+    stool = GEOMETRY.run({"op": "chair", "back_height": 0.0})
+    assert not _faces_of(stool, "back")
+    assert stool.bounds()[1][2] == pytest.approx(0.45)
+
+
+def test_shelf_boards_are_evenly_spaced() -> None:
+    spec = {"op": "shelf", "size": [0.8, 0.3, 1.0], "shelves": 3, "plinth": 0.0, "bevel": 0.0}
+    mesh = GEOMETRY.run(spec)
+    # Without rounding, the shelf faces lie at each board's bottom and top.
+    heights = sorted(
+        {round(mesh.vertices[i][2], 9) for f in _faces_of(mesh, "shelves") for i in mesh.faces[f]}
+    )
+    assert len(heights) == 6
+    bottoms = [*heights[::2], 1.0 - 0.02]  # ... and the carcass top board
+    tops = [0.02, *heights[1::2]]  # the carcass bottom board first
+    gaps = [b - t for t, b in zip(tops, bottoms, strict=True)]
+    assert gaps == pytest.approx([gaps[0]] * 4)
+
+
+def test_rounded_boxes_keep_their_size_and_round_their_edges() -> None:
+    plain = GEOMETRY.run({"op": "box", "size": [0.4, 0.2, 0.1]})
+    round_ = GEOMETRY.run({"op": "box", "size": [0.4, 0.2, 0.1], "bevel": 0.01})
+    assert plain.bounds() == round_.bounds()
+    assert not plain.smooth and round_.smooth
+    # A rounded box is the inner box grown by a ball of the radius; the facets of the
+    # rounding lie inside the true curve, so a little more is lost than exactly.
+    r, (a, b, c) = 0.01, (0.4 - 0.02, 0.2 - 0.02, 0.1 - 0.02)
+    exact = a * b * c + 2 * r * (a * b + b * c + a * c) + math.pi * r * r * (a + b + c)
+    exact += 4 / 3 * math.pi * r**3
+    assert round_.signed_volume() == pytest.approx(exact, rel=0.01)
+    assert round_.signed_volume() < exact
+    box = GEOMETRY.get("box")
+    assert box.check(box.with_defaults({"size": [0.4, 0.2, 0.1], "bevel": 0.06}))

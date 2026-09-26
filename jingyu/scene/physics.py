@@ -74,7 +74,9 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
         below: str | None = None
         for other_id, mesh in meshes.items():
             other_box = bounds[other_id]
-            if other_id == obj_id or other_box[0][2] > box[1][2]:
+            # Only something that reaches lower than the object can hold it up; a room
+            # around it, whose ceiling is above a shelf inside, is not "below" the shelf.
+            if other_id == obj_id or other_box[0][2] >= box[0][2] - FLOATING_TOLERANCE:
                 continue
             if not _footprints_overlap(box, other_box):
                 continue

@@ -94,6 +94,7 @@ def _glass(p: Mapping[str, Any]) -> Recipe:
         roughness=lerp(0.0, 0.5, float(p["frost"])),
         ior=p["ior"],
         transmission=1.0,
+        thin=bool(p["thin"]),
     )
 
 
@@ -104,9 +105,16 @@ GLASS = GeneratorDef[Recipe](
         "tint": _color("Transmitted colour; white is clear.", "#ffffff"),
         "frost": _unit("Surface frosting from polished (0) to heavily frosted (1).", 0.0),
         "ior": number("Index of refraction.", default=1.5, minimum=1.0, maximum=4.0),
+        "thin": {
+            "type": "boolean",
+            "default": False,
+            "description": "true for a thin sheet such as a window pane: light and sunbeams "
+            "pass straight through without bending, only the surface reflects. false for "
+            "solid glass (a bottle, a paperweight) that bends what is seen through it.",
+        },
     },
     run=_glass,
-    examples=({"family": "glass", "tint": "#cfe8d4"},),
+    examples=({"family": "glass", "tint": "#cfe8d4"}, {"family": "glass", "thin": True}),
 )
 
 

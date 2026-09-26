@@ -29,9 +29,8 @@ from ..errors import JingyuError, pointer_join
 from ..geometry.mesh import Portal
 from ..geometry.raycast import cast, unit
 from ..geometry.transform import Vec3
-from ..materials import MATERIALS
 from ..placement import Placement
-from .common import centre_of, frame_box, round_vec, sample_points
+from .common import Sight, centre_of, frame_box, round_vec, sample_points
 
 ENVIRONMENT_SUN = "environment.sun"
 #: Below this elevation the daylight sun is too faint to give direct light.
@@ -74,8 +73,7 @@ def aim_sun(scene: Mapping[str, Any], placement: Placement, request: SunRequest)
         for o in scene["objects"]
         if o["visible"] and o["id"] in placement.meshes
     }
-    clear = _transmissive(scene)
-    opaque = {k: v for k, v in meshes.items() if k not in clear}
+    sight = Sight(scene, placement)
     target, samples, target_object = _target(scene, placement, meshes, request)
     openings = _openings(scene, meshes, request.through)
     budget = 1 if len(samples) == 1 else _OBJECT_BUDGET
@@ -84,7 +82,7 @@ def aim_sun(scene: Mapping[str, Any], placement: Placement, request: SunRequest)
     for tried, (direction, opening) in enumerate(
         _candidates(target, openings, request, current), start=1
     ):
-        shade = _shade(opaque, samples, direction)
+        shade = _shade(sight, samples, direction)
         lit = 1.0 - sum(shade.values()) / len(samples)
         if best is None or lit > best[0] + 1e-9:
             best = (lit, direction, opening, shade)
@@ -155,7 +153,7 @@ def aim_sun(scene: Mapping[str, Any], placement: Placement, request: SunRequest)
             "elevation_range": _range(target, opening.portal, azimuth, "elevation"),
             "azimuth_range": _range(target, opening.portal, elevation, "azimuth"),
         }
-        result["patch"] = _patch(scene, placement, opaque, opening.portal, direction)
+        result["patch"] = _patch(scene, placement, sight, opening.portal, direction)
     return result
 
 
@@ -194,15 +192,6 @@ def _light(scene: Mapping[str, Any], placement: Placement, wanted: str | None) -
     matrix = placement.oriented[wanted]
     # A sun lamp shines along its local -Z, so the sun itself lies along +Z.
     return wanted, unit((matrix[2], matrix[6], matrix[10]))
-
-
-def _transmissive(scene: Mapping[str, Any]) -> set[str]:
-    clear_materials = {
-        m["id"]
-        for m in scene["materials"]
-        if MATERIALS.run({k: v for k, v in m.items() if k != "id"}).refractive
-    }
-    return {o["id"] for o in scene["objects"] if o.get("material") in clear_materials}
 
 
 def _target(
@@ -273,13 +262,13 @@ def _seen_surface(camera: CameraModel, meshes: Mapping[str, Any], obj_id: str) -
     return points  # type: ignore[return-value]
 
 
-def _shade(opaque: Mapping[str, Any], samples: Sequence[Vec3], toward_sun: Vec3) -> Counter[str]:
+def _shade(sight: Sight, samples: Sequence[Vec3], toward_sun: Vec3) -> Counter[str]:
     """For each object, how many of *samples* it keeps out of the sun."""
 
     shade: Counter[str] = Counter()
     for point in samples:
         origin = tuple(p + d * 1e-4 for p, d in zip(point, toward_sun, strict=True))
-        found = cast(opaque, origin, toward_sun)
+        found = sight.cast(origin, toward_sun)
         if found is not None:
             shade[found.object] += 1
     return shade
@@ -421,7 +410,7 @@ def _range(target: Vec3, portal: Portal, fixed: float, sweep: str) -> list[float
 def _patch(
     scene: Mapping[str, Any],
     placement: Placement,
-    opaque: Mapping[str, Any],
+    sight: Sight,
     portal: Portal,
     toward_sun: Vec3,
 ) -> list[dict[str, Any]]:
@@ -439,7 +428,7 @@ def _patch(
             # Start outside, so the far side of a thick wall's reveal can shade the beam.
             start = tuple(o + s * 0.5 for o, s in zip(origin, toward_sun, strict=True))
             total += 1
-            found = cast(opaque, start, beam)
+            found = sight.cast(start, beam)
             if found is not None:
                 hits.setdefault(found.object, []).append(found.hit.point)
     rows = []

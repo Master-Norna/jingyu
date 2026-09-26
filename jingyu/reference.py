@@ -160,6 +160,38 @@ def _generator_section(definition: GeneratorDef[Any]) -> list[str]:
         )
     else:
         lines.append("无参数。")
+    for name, schema in definition.params.items():
+        items = schema.get("items")
+        if isinstance(items, Mapping) and items.get("properties"):
+            required = set(items.get("required", []))
+            lines += ["", f"`{name}` 的每一项：", ""]
+            lines += _table(
+                ["字段", "类型", "默认", "说明"],
+                (
+                    (
+                        f"`{field}`" + (" *" if field in required else ""),
+                        _param_type(sub),
+                        _json_inline(sub["default"]) if "default" in sub else "",
+                        sub.get("description", ""),
+                    )
+                    for field, sub in items["properties"].items()
+                ),
+            )
+    if definition.parts:
+        lines += ["", "部件（`part_materials` 可逐个指定材质）：", ""]
+        lines += _table(
+            ["部件", "说明", "默认材质"],
+            (
+                (
+                    f"`{part}`",
+                    description,
+                    _json_inline(dict(definition.part_defaults[part]))
+                    if part in definition.part_defaults
+                    else "物体的 `material`",
+                )
+                for part, description in definition.parts.items()
+            ),
+        )
     for example in definition.examples:
         lines += ["", "示例：" + _json_inline(dict(example))]
     lines.append("")

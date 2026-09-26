@@ -1,7 +1,9 @@
 """Auxiliary render passes.
 
 The object id mask lets a model point at a region of the image and get back
-which object, material and scene entry it is looking at.
+which object, part, material and scene entry it is looking at.  Every face of a
+mesh carries its id as a face attribute, so the parts of one assembled object
+(a table's top and legs) get ids of their own.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from . import compat, kit
 from .build import BuiltObject
 
 _OVERRIDE_NAME = "__jingyu_id_mask__"
+_ID_ATTRIBUTE = "jingyu_id"
 
 
 def _override_material() -> Any:
@@ -23,11 +26,13 @@ def _override_material() -> Any:
     compat.ensure_node_tree(material)
     tree = material.node_tree
     tree.nodes.clear()
-    info = tree.nodes.new("ShaderNodeObjectInfo")
+    attribute = tree.nodes.new("ShaderNodeAttribute")
+    attribute.attribute_type = "GEOMETRY"
+    attribute.attribute_name = _ID_ATTRIBUTE
     emission = tree.nodes.new("ShaderNodeEmission")
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     emission.inputs["Strength"].default_value = 1.0
-    tree.links.new(info.outputs["Color"], emission.inputs["Color"])
+    tree.links.new(attribute.outputs["Color"], emission.inputs["Color"])
     tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
     return material
 
@@ -40,14 +45,32 @@ def render_id_mask(scene: Any, objects: list[BuiltObject], filepath: Path) -> di
     """
 
     entries: dict[str, Any] = {}
-    for index, built in enumerate(objects, start=1):
-        r, g, b = encode_index(index)
-        built.blender_object.color = (r / 255.0, g / 255.0, b / 255.0, 1.0)
-        entries[str(index)] = {
-            "object": built.id,
-            "pointer": built.pointer,
-            "material": built.material,
-        }
+    index = 0
+    for built in objects:
+        mesh = built.blender_object.data
+        slots = [0] * len(mesh.polygons)
+        mesh.polygons.foreach_get("material_index", slots)
+        ids: dict[int, int] = {}
+        for slot in sorted(set(slots)):
+            index += 1
+            ids[slot] = index
+            part = built.parts[slot] if slot < len(built.parts) else None
+            entry: dict[str, Any] = {
+                "object": built.id,
+                "pointer": built.pointer,
+                "material": built.slot_materials[slot]
+                if slot < len(built.slot_materials)
+                else built.material,
+            }
+            if part is not None:
+                entry["part"] = part
+            entries[str(index)] = entry
+        colors: list[float] = []
+        for slot in slots:
+            r, g, b = encode_index(ids[slot])
+            colors += (r / 255.0, g / 255.0, b / 255.0, 1.0)
+        attribute = mesh.attributes.new(_ID_ATTRIBUTE, "FLOAT_COLOR", "FACE")
+        attribute.data.foreach_set("color", colors)
 
     for obj in scene.objects:
         if obj.type == "LIGHT":

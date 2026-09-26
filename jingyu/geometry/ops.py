@@ -14,7 +14,8 @@ from ..errors import JingyuError
 from ..generator import GeneratorDef, ParamProblem, integer, number
 from .curves import linspace, smooth_monotone
 from .lathe import Point2, close_solid, revolve, shell
-from .mesh import MeshData, Portal
+from .mesh import MeshData
+from .pieces import rounded_box
 
 _SEGMENTS = integer(
     "Number of segments around the axis; more is smoother and heavier.",
@@ -44,22 +45,33 @@ def _size3(description: str) -> dict[str, Any]:
 
 
 def _box(p: Mapping[str, Any]) -> MeshData:
-    x, y, z = (float(v) / 2.0 for v in p["size"])
-    z *= 2.0
-    vertices = (
-        (-x, -y, 0.0), (x, -y, 0.0), (x, y, 0.0), (-x, y, 0.0),
-        (-x, -y, z), (x, -y, z), (x, y, z), (-x, y, z),
-    )  # fmt: skip
-    faces = ((0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7))
-    return MeshData(vertices, faces, smooth=False)
+    return rounded_box(p["size"], float(p["bevel"]))
+
+
+def _check_box(p: Mapping[str, Any]) -> list[ParamProblem]:
+    if 2.0 * float(p["bevel"]) > min(float(v) for v in p["size"]):
+        return [("bevel", "the rounding is larger than half the box's smallest side")]
+    return []
 
 
 BOX = GeneratorDef[MeshData](
     name="box",
-    summary="Axis-aligned box standing on its origin.",
-    params={"size": _size3("Width (x), depth (y) and height (z) in metres.")},
+    summary="Axis-aligned box standing on its origin, its edges optionally rounded.",
+    params={
+        "size": _size3("Width (x), depth (y) and height (z) in metres."),
+        "bevel": number(
+            "Radius of the rounded edges in metres; a few millimetres catch the light like a "
+            "real, handled object. 0 is razor-sharp.",
+            default=0.0,
+            minimum=0.0,
+        ),
+    },
     run=_box,
-    examples=({"op": "box", "size": [1.2, 0.6, 0.75]},),
+    check=_check_box,
+    examples=(
+        {"op": "box", "size": [1.2, 0.6, 0.75]},
+        {"op": "box", "size": [0.3, 0.2, 0.05], "bevel": 0.004},
+    ),
 )
 
 
@@ -310,129 +322,6 @@ VESSEL = GeneratorDef[MeshData](
     ),
 )
 
-# ----------------------------------------------------------------------- wall
-
-_OPENING = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["x", "sill", "width", "height"],
-    "properties": {
-        "x": {"type": "number", "description": "Centre of the opening along the wall (x), metres."},
-        "sill": {
-            "type": "number",
-            "minimum": 0,
-            "description": "Height of the opening's bottom edge above the wall base; 0 = door.",
-        },
-        "width": {"type": "number", "exclusiveMinimum": 0, "description": "Opening width."},
-        "height": {"type": "number", "exclusiveMinimum": 0, "description": "Opening height."},
-    },
-}
-
-
-def _wall_openings(p: Mapping[str, Any]) -> list[tuple[float, float, float, float]]:
-    return [
-        (
-            float(o["x"]) - float(o["width"]) / 2.0,
-            float(o["x"]) + float(o["width"]) / 2.0,
-            float(o["sill"]),
-            float(o["sill"]) + float(o["height"]),
-        )
-        for o in p["openings"]
-    ]
-
-
-def _wall(p: Mapping[str, Any]) -> MeshData:
-    width, thickness, height = (float(v) for v in p["size"])
-    x_min, x_max = -width / 2.0, width / 2.0
-    y_front, y_back = -thickness / 2.0, thickness / 2.0
-    holes = _wall_openings(p)
-    xs = sorted({x_min, x_max, *(c for h in holes for c in h[:2] if x_min < c < x_max)})
-    zs = sorted({0.0, height, *(c for h in holes for c in h[2:] if 0.0 < c < height)})
-
-    def filled(i: int, j: int) -> bool:
-        if not (0 <= i < len(xs) - 1 and 0 <= j < len(zs) - 1):
-            return False
-        cx, cz = (xs[i] + xs[i + 1]) / 2.0, (zs[j] + zs[j + 1]) / 2.0
-        return not any(x0 < cx < x1 and z0 < cz < z1 for x0, x1, z0, z1 in holes)
-
-    vertices: list[tuple[float, float, float]] = []
-    index: dict[tuple[int, int, int], int] = {}
-
-    def v(side: int, i: int, j: int) -> int:
-        key = (side, i, j)
-        if key not in index:
-            index[key] = len(vertices)
-            vertices.append((xs[i], y_back if side else y_front, zs[j]))
-        return index[key]
-
-    faces: list[tuple[int, ...]] = []
-    for i in range(len(xs) - 1):
-        for j in range(len(zs) - 1):
-            if not filled(i, j):
-                continue
-            f00, f10, f11, f01 = v(0, i, j), v(0, i + 1, j), v(0, i + 1, j + 1), v(0, i, j + 1)
-            b00, b10, b11, b01 = v(1, i, j), v(1, i + 1, j), v(1, i + 1, j + 1), v(1, i, j + 1)
-            faces.append((f00, f10, f11, f01))
-            faces.append((b10, b00, b01, b11))
-            if not filled(i - 1, j):
-                faces.append((b00, f00, f01, b01))
-            if not filled(i + 1, j):
-                faces.append((f10, b10, b11, f11))
-            if not filled(i, j - 1):
-                faces.append((f00, b00, b10, f10))
-            if not filled(i, j + 1):
-                faces.append((f01, f11, b11, b01))
-    portals = tuple(
-        Portal(
-            f"openings/{n}",
-            ((x0 + x1) / 2.0, 0.0, (z0 + z1) / 2.0),
-            ((x1 - x0) / 2.0, 0.0, 0.0),
-            (0.0, 0.0, (z1 - z0) / 2.0),
-        )
-        for n, (x0, x1, z0, z1) in enumerate(holes)
-    )
-    return MeshData(tuple(vertices), tuple(faces), smooth=False, portals=portals)
-
-
-def _check_wall(p: Mapping[str, Any]) -> list[ParamProblem]:
-    width, _, height = (float(v) for v in p["size"])
-    problems: list[ParamProblem] = []
-    for n, (x0, x1, _z0, z1) in enumerate(_wall_openings(p)):
-        if x0 < -width / 2.0 - 1e-9 or x1 > width / 2.0 + 1e-9 or z1 > height + 1e-9:
-            problems.append(("openings", f"opening {n} extends beyond the wall"))
-    if not problems and not _wall(p).faces:
-        problems.append(("openings", "the openings remove the whole wall"))
-    return problems
-
-
-WALL = GeneratorDef[MeshData](
-    name="wall",
-    summary=(
-        "Upright slab standing on its origin, spanning x, with rectangular openings "
-        "cut through it (windows, doors). Light passes through the openings."
-    ),
-    params={
-        "size": _size3("Width (x), thickness (y) and height (z) in metres."),
-        "openings": {
-            "type": "array",
-            "items": _OPENING,
-            "maxItems": 64,
-            "default": [],
-            "description": "Rectangular holes through the wall; x is measured from its centre.",
-        },
-    },
-    run=_wall,
-    check=_check_wall,
-    examples=(
-        {
-            "op": "wall",
-            "size": [4.0, 0.15, 2.6],
-            "openings": [{"x": -0.6, "sill": 0.9, "width": 1.2, "height": 1.3}],
-        },
-    ),
-)
-
-
 ALL_OPS: tuple[GeneratorDef[MeshData], ...] = (
     BOX,
     PLANE,
@@ -441,7 +330,6 @@ ALL_OPS: tuple[GeneratorDef[MeshData], ...] = (
     CONE,
     LATHE,
     VESSEL,
-    WALL,
 )
 
 __all__ = ["ALL_OPS", "vessel_profile"]

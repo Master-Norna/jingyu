@@ -49,13 +49,21 @@ def _link(scene: Any, obj: Any, expected_name: str) -> Any:
     return obj
 
 
-def new_mesh_object(scene: Any, name: str, data: MeshData) -> Any:
-    """Create a mesh object from renderer-independent mesh data."""
+def new_mesh_object(scene: Any, name: str, data: MeshData, materials: Sequence[Any]) -> Any:
+    """Create a mesh object from renderer-independent mesh data.
+
+    *materials* fill the slots in order: slot i dresses part i of an assembled mesh
+    (a one-piece mesh takes one material).
+    """
 
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata([tuple(v) for v in data.vertices], [], [tuple(f) for f in data.faces])
+    for material in materials:
+        mesh.materials.append(material)
     if data.smooth:
         mesh.polygons.foreach_set("use_smooth", [True] * len(mesh.polygons))
+    if data.parts:
+        mesh.polygons.foreach_set("material_index", list(data.face_parts))
     if data.sharp_edges:
         sharp = {tuple(sorted(edge)) for edge in data.sharp_edges}
         for edge in mesh.edges:
@@ -84,6 +92,9 @@ def principled_material(name: str, recipe: Recipe) -> Any:
     if material.name != name:
         raise JingyuError("blender.build_failed", f"material name {name!r} is not unique")
     compat.ensure_node_tree(material)
+    if recipe.thin:
+        _thin_sheet(material, recipe)
+        return material
     node = next(
         (n for n in material.node_tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled"),
         None,
@@ -106,9 +117,31 @@ def principled_material(name: str, recipe: Recipe) -> Any:
     return material
 
 
-def assign_material(obj: Any, material: Any) -> None:
-    obj.data.materials.clear()
-    obj.data.materials.append(material)
+def _thin_sheet(material: Any, recipe: Recipe) -> None:
+    """A pane: see-through (tinted) where the Fresnel term does not reflect.
+
+    A principled BSDF with transmission refracts, and sunlight through refraction
+    is a caustic path the renderer barely samples: the window would shade the
+    room.  A thin sheet does not bend light, so it is a transparent surface mixed
+    with a glossy reflection, and shadow rays pass through it.
+    """
+
+    tree = material.node_tree
+    tree.nodes.clear()
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    clear = tree.nodes.new("ShaderNodeBsdfTransparent")
+    clear.inputs["Color"].default_value = (*recipe.base_color, 1.0)
+    gloss = tree.nodes.new("ShaderNodeBsdfGlossy")
+    gloss.inputs["Roughness"].default_value = recipe.roughness
+    fresnel = tree.nodes.new("ShaderNodeFresnel")
+    fresnel.inputs["IOR"].default_value = recipe.ior
+    mix = tree.nodes.new("ShaderNodeMixShader")
+    tree.links.new(fresnel.outputs["Fac"], mix.inputs["Fac"])
+    tree.links.new(clear.outputs["BSDF"], mix.inputs[1])
+    tree.links.new(gloss.outputs["BSDF"], mix.inputs[2])
+    tree.links.new(mix.outputs["Shader"], output.inputs["Surface"])
+    material.diffuse_color = (*recipe.base_color, 0.1)
+    compat.enable_transparency(material)
 
 
 def new_light(scene: Any, name: str, kind: str, color: RGB, **params: Any) -> Any:
@@ -256,7 +289,6 @@ def render_still(scene: Any, filepath: Path) -> None:
 
 
 __all__ = [
-    "assign_material",
     "new_camera",
     "new_light",
     "new_mesh_object",

@@ -105,7 +105,9 @@ class MeshData:
 
     ``sharp_edges`` lists vertex-index pairs whose shading must not be smoothed
     across; renderers keep them crisp even when ``smooth`` is true.  ``portals``
-    are the openings cut through it.
+    are the openings cut through it.  An assembled mesh names its ``parts`` (a
+    table's top and legs) and gives each face's part index in ``face_parts``; a
+    mesh without parts is one piece.
     """
 
     vertices: tuple[Vec3, ...]
@@ -113,6 +115,17 @@ class MeshData:
     smooth: bool
     sharp_edges: tuple[tuple[int, int], ...] = ()
     portals: tuple[Portal, ...] = ()
+    parts: tuple[str, ...] = ()
+    face_parts: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.parts and len(self.face_parts) != len(self.faces):
+            raise ValueError("face_parts must give a part for every face")
+
+    def part_of(self, face: int) -> str | None:
+        """The part a face belongs to, or None for a mesh without parts."""
+
+        return self.parts[self.face_parts[face]] if self.parts else None
 
     def bounds(self) -> tuple[Vec3, Vec3]:
         xs, ys, zs = zip(*self.vertices, strict=True)

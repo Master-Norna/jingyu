@@ -143,7 +143,11 @@
             "cone",
             "lathe",
             "vessel",
-            "wall"
+            "wall",
+            "room",
+            "table",
+            "chair",
+            "shelf"
           ],
           "description": "Which geometry operator to use."
         }
@@ -163,7 +167,7 @@
           "then": {
             "type": "object",
             "title": "box",
-            "description": "Axis-aligned box standing on its origin.",
+            "description": "Axis-aligned box standing on its origin, its edges optionally rounded.",
             "additionalProperties": false,
             "required": [
               "op",
@@ -172,7 +176,7 @@
             "properties": {
               "op": {
                 "const": "box",
-                "description": "Axis-aligned box standing on its origin."
+                "description": "Axis-aligned box standing on its origin, its edges optionally rounded."
               },
               "size": {
                 "type": "array",
@@ -183,6 +187,12 @@
                 },
                 "minItems": 3,
                 "maxItems": 3
+              },
+              "bevel": {
+                "type": "number",
+                "description": "Radius of the rounded edges in metres; a few millimetres catch the light like a real, handled object. 0 is razor-sharp.",
+                "minimum": 0.0,
+                "default": 0.0
               }
             }
           }
@@ -555,7 +565,7 @@
           "then": {
             "type": "object",
             "title": "wall",
-            "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors). Light passes through the openings.",
+            "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors), optionally framed and glazed. Light passes through the openings. For a whole room use room.",
             "additionalProperties": false,
             "required": [
               "op",
@@ -564,7 +574,7 @@
             "properties": {
               "op": {
                 "const": "wall",
-                "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors). Light passes through the openings."
+                "description": "Upright slab standing on its origin, spanning x, with rectangular openings cut through it (windows, doors), optionally framed and glazed. Light passes through the openings. For a whole room use room."
               },
               "size": {
                 "type": "array",
@@ -590,12 +600,12 @@
                   "properties": {
                     "x": {
                       "type": "number",
-                      "description": "Centre of the opening along the wall (x), metres."
+                      "description": "Centre of the opening along the wall from the wall's middle, metres."
                     },
                     "sill": {
                       "type": "number",
                       "minimum": 0,
-                      "description": "Height of the opening's bottom edge above the wall base; 0 = door."
+                      "description": "Height of the opening's bottom edge above the floor; 0 = door."
                     },
                     "width": {
                       "type": "number",
@@ -606,12 +616,381 @@
                       "type": "number",
                       "exclusiveMinimum": 0,
                       "description": "Opening height."
+                    },
+                    "frame": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 0.0,
+                      "description": "Width of the frame around the opening in metres (part frames); 0 leaves a bare hole."
+                    },
+                    "glass": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "true fills the opening with a pane (part glass, clear glass unless part_materials says otherwise)."
                     }
                   }
                 },
                 "maxItems": 64,
                 "default": [],
                 "description": "Rectangular holes through the wall; x is measured from its centre."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "room"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "room",
+            "description": "A closed room: four walls with doors and windows, a floor and a ceiling, in one call. Its origin is the middle of the floor surface; things stand on it with rest_on. Openings are named by wall, so no wall has to be turned or placed by hand.",
+            "additionalProperties": false,
+            "required": [
+              "op",
+              "size"
+            ],
+            "properties": {
+              "op": {
+                "const": "room",
+                "description": "A closed room: four walls with doors and windows, a floor and a ceiling, in one call. Its origin is the middle of the floor surface; things stand on it with rest_on. Openings are named by wall, so no wall has to be turned or placed by hand."
+              },
+              "size": {
+                "type": "array",
+                "description": "Inside width (x), depth (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3
+              },
+              "wall_thickness": {
+                "type": "number",
+                "description": "Thickness of the walls in metres; windows get deep reveals in thick walls.",
+                "exclusiveMinimum": 0,
+                "default": 0.15
+              },
+              "slab_thickness": {
+                "type": "number",
+                "description": "Thickness of the floor and ceiling slabs in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.12
+              },
+              "floor": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include the floor slab."
+              },
+              "ceiling": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include the ceiling; without it the sky pours in from above."
+              },
+              "openings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "wall",
+                    "x",
+                    "sill",
+                    "width",
+                    "height"
+                  ],
+                  "properties": {
+                    "x": {
+                      "type": "number",
+                      "description": "Centre of the opening along the wall from the wall's middle, metres, positive to the right seen from inside the room."
+                    },
+                    "sill": {
+                      "type": "number",
+                      "minimum": 0,
+                      "description": "Height of the opening's bottom edge above the floor; 0 = door."
+                    },
+                    "width": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Opening width."
+                    },
+                    "height": {
+                      "type": "number",
+                      "exclusiveMinimum": 0,
+                      "description": "Opening height."
+                    },
+                    "frame": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 0.05,
+                      "description": "Width of the frame around the opening in metres (part frames); 0 leaves a bare hole."
+                    },
+                    "glass": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "true fills the opening with a pane (part glass, clear glass unless part_materials says otherwise)."
+                    },
+                    "wall": {
+                      "enum": [
+                        "back",
+                        "front",
+                        "left",
+                        "right"
+                      ],
+                      "description": "Which wall: back (+y), front (-y), left (-x) or right (+x), in the room's own axes."
+                    }
+                  }
+                },
+                "maxItems": 64,
+                "default": [],
+                "description": "Doors and windows; each names its wall."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "table"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "table",
+            "description": "A table: a top on four legs, with an optional apron. size is the overall width, depth and height (the top surface).",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "table",
+                "description": "A table: a top on four legs, with an optional apron. size is the overall width, depth and height (the top surface)."
+              },
+              "size": {
+                "type": "array",
+                "description": "Overall width (x), depth (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "default": [
+                  1.2,
+                  0.75,
+                  0.75
+                ]
+              },
+              "top_thickness": {
+                "type": "number",
+                "description": "Thickness of the top in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.035
+              },
+              "leg_thickness": {
+                "type": "number",
+                "description": "Width of a leg in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.05
+              },
+              "leg_inset": {
+                "type": "number",
+                "description": "Distance from the top's edge to the legs in metres.",
+                "minimum": 0,
+                "default": 0.04
+              },
+              "legs": {
+                "enum": [
+                  "square",
+                  "round",
+                  "tapered"
+                ],
+                "default": "square",
+                "description": "Leg shape: square posts, round posts or round and tapering."
+              },
+              "apron": {
+                "type": "number",
+                "description": "Height of the rail under the top in metres; 0 for none.",
+                "minimum": 0,
+                "default": 0.07
+              },
+              "bevel": {
+                "type": "number",
+                "description": "Radius of rounded edges in metres; a few millimetres catch the light like a real, handled object. 0 is razor-sharp.",
+                "minimum": 0.0,
+                "default": 0.003
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "chair"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "chair",
+            "description": "A dining chair: four legs, a seat, and a back of slats or a panel. It faces -y; its back is on the +y side. Turn it with rotation.",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "chair",
+                "description": "A dining chair: four legs, a seat, and a back of slats or a panel. It faces -y; its back is on the +y side. Turn it with rotation."
+              },
+              "seat_height": {
+                "type": "number",
+                "description": "Height of the seat's top in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.45
+              },
+              "seat_size": {
+                "type": "array",
+                "description": "Seat width (x) and depth (y) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 2,
+                "maxItems": 2,
+                "default": [
+                  0.44,
+                  0.42
+                ]
+              },
+              "seat_thickness": {
+                "type": "number",
+                "description": "Seat thickness in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.03
+              },
+              "back_height": {
+                "type": "number",
+                "description": "Height of the back above the seat in metres; 0 makes a stool.",
+                "minimum": 0,
+                "default": 0.42
+              },
+              "back": {
+                "enum": [
+                  "slats",
+                  "panel",
+                  "none"
+                ],
+                "default": "slats",
+                "description": "Vertical slats, a solid panel, or only the top rail and posts."
+              },
+              "slats": {
+                "type": "integer",
+                "description": "Number of slats in a slatted back.",
+                "minimum": 1,
+                "maximum": 12,
+                "default": 3
+              },
+              "leg_thickness": {
+                "type": "number",
+                "description": "Width of a leg in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.035
+              },
+              "bevel": {
+                "type": "number",
+                "description": "Radius of rounded edges in metres; a few millimetres catch the light like a real, handled object. 0 is razor-sharp.",
+                "minimum": 0.0,
+                "default": 0.003
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "const": "shelf"
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "shelf",
+            "description": "A bookcase or open shelf: two sides, top and bottom, evenly spaced shelf boards and a back panel. Its open front faces -y. Put things on a board with rest_on: they fall from where they are onto the board below.",
+            "additionalProperties": false,
+            "required": [
+              "op"
+            ],
+            "properties": {
+              "op": {
+                "const": "shelf",
+                "description": "A bookcase or open shelf: two sides, top and bottom, evenly spaced shelf boards and a back panel. Its open front faces -y. Put things on a board with rest_on: they fall from where they are onto the board below."
+              },
+              "size": {
+                "type": "array",
+                "description": "Overall width (x), depth (y) and height (z) in metres.",
+                "items": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "default": [
+                  0.8,
+                  0.3,
+                  1.8
+                ]
+              },
+              "shelves": {
+                "type": "integer",
+                "description": "Number of shelf boards between bottom and top.",
+                "minimum": 0,
+                "maximum": 40,
+                "default": 4
+              },
+              "board_thickness": {
+                "type": "number",
+                "description": "Board thickness in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.02
+              },
+              "plinth": {
+                "type": "number",
+                "description": "Height of the recessed base under the bottom board in metres; 0 for none.",
+                "minimum": 0,
+                "default": 0.06
+              },
+              "back_panel": {
+                "type": "boolean",
+                "default": true,
+                "description": "Include a thin back panel."
+              },
+              "bevel": {
+                "type": "number",
+                "description": "Radius of rounded edges in metres; a few millimetres catch the light like a real, handled object. 0 is razor-sharp.",
+                "minimum": 0.0,
+                "default": 0.002
               }
             }
           }
@@ -726,6 +1105,11 @@
                 "minimum": 1.0,
                 "maximum": 4.0,
                 "default": 1.5
+              },
+              "thin": {
+                "type": "boolean",
+                "default": false,
+                "description": "true for a thin sheet such as a window pane: light and sunbeams pass straight through without bending, only the surface reflects. false for solid glass (a bottle, a paperweight) that bends what is seen through it."
               },
               "id": {
                 "type": "string",
@@ -1025,6 +1409,16 @@
           "$ref": "#/$defs/id",
           "description": "Id of an entry in materials; omitted means neutral grey."
         },
+        "part_materials": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/id"
+          },
+          "description": "Materials for the named parts of an assembled geometry (list_generators shows the parts of each op), e.g. {\"top\": \"oak\", \"base\": \"steel\"}. Parts not named wear material, or their own default (window panes are clear glass)."
+        },
         "parent": {
           "$ref": "#/$defs/id",
           "description": "Id of a group or an object this entry belongs to. Its location, rotation and aim are then relative to that parent, and it moves with it: fruit parented to its bowl follows the bowl wherever it goes."
@@ -1056,7 +1450,7 @@
         },
         "rest_on": {
           "$ref": "#/$defs/id",
-          "description": "Id of an object to rest on. The object keeps its x and y, and its height (location z) is computed so its lowest points touch the top surface of that object: a table top, the inside of a bowl."
+          "description": "Id of an object to rest on. The object keeps its x and y and falls from where it is onto the nearest surface of that object below it: a shelf board, the floor of a room, the inside of a bowl. Placed below all of them (at height 0, say), it lands on the topmost: a table top."
         },
         "location": {
           "type": "array",

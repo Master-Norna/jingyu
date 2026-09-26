@@ -9,9 +9,16 @@ from typing import Any
 
 from ..camera import CameraModel
 from ..errors import JingyuError
+from ..geometry import GEOMETRY
+from ..geometry.raycast import SceneHit, cast
 from ..geometry.spatial import WorldMesh
 from ..geometry.transform import Vec3
+from ..materials import MATERIALS
+from ..materials.assign import part_materials
 from ..placement import Placement
+
+#: A ray passes through at most this many clear faces.
+_MAX_PASSES = 16
 
 #: Per object, at most this many vertices stand in for its shape when projecting.
 MAX_POINTS_PER_OBJECT = 600
@@ -129,13 +136,96 @@ def predicted_layout(
     return rows
 
 
+class Sight:
+    """Rays through the visible objects of a scene that pass through clear faces.
+
+    Glass lets sunlight and sight through, so a window pane neither shades the
+    table nor hides it from the camera.  Clearness is per face: a room's panes
+    are clear, its walls are not.
+    """
+
+    def __init__(
+        self, scene: Mapping[str, Any], placement: Placement, skip: Iterable[str] = ()
+    ) -> None:
+        skipped = set(skip)
+        self.meshes = {
+            obj["id"]: placement.meshes[obj["id"]]
+            for obj in scene["objects"]
+            if obj["visible"] and obj["id"] in placement.meshes and obj["id"] not in skipped
+        }
+        self.clear = clear_faces(scene, self.meshes)
+
+    def cast(
+        self, origin: Sequence[float], direction: Sequence[float], t_max: float = math.inf
+    ) -> SceneHit | None:
+        start = (float(origin[0]), float(origin[1]), float(origin[2]))
+        for _ in range(_MAX_PASSES):
+            found = cast(self.meshes, start, direction, t_max)
+            if found is None:
+                return None
+            faces = self.clear.get(found.object, set())
+            if faces is not None and found.hit.face not in faces:
+                return found
+            step = found.hit.distance + 1e-6
+            start = (
+                start[0] + direction[0] * step,
+                start[1] + direction[1] * step,
+                start[2] + direction[2] * step,
+            )
+            t_max -= step
+        return None
+
+
+def clear_faces(
+    scene: Mapping[str, Any], meshes: Mapping[str, WorldMesh]
+) -> dict[str, set[int] | None]:
+    """Per object with clear surfaces, the faces that let light through (None: all)."""
+
+    refractive: dict[str, bool] = {}
+
+    def clear(spec: Mapping[str, Any]) -> bool:
+        key = repr(sorted(spec.items()))
+        if key not in refractive:
+            refractive[key] = MATERIALS.run(spec).refractive
+        return refractive[key]
+
+    materials = {m["id"]: {k: v for k, v in m.items() if k != "id"} for m in scene["materials"]}
+    found: dict[str, set[int] | None] = {}
+    for obj in scene["objects"]:
+        mesh = meshes.get(obj["id"])
+        if mesh is None:
+            continue
+        assignment = part_materials(obj, GEOMETRY.get(obj["geometry"]["op"]))
+        see_through = {
+            part
+            for part, assigned in assignment.items()
+            if (assigned.material is not None and clear(materials[assigned.material]))
+            or (
+                assigned.material is None
+                and assigned.default is not None
+                and clear(assigned.default)
+            )
+        }
+        if not see_through:
+            continue
+        if None in see_through:
+            found[obj["id"]] = None
+            continue
+        source = mesh.source
+        wanted = {source.parts.index(p) for p in see_through if p in source.parts}
+        found[obj["id"]] = {i for i, part in enumerate(source.face_parts) if part in wanted}
+    return found
+
+
 def round_vec(values: Sequence[float], digits: int = 4) -> list[float]:
     return [round(float(v), digits) + 0.0 for v in values]
 
 
 __all__ = [
     "MAX_POINTS_PER_OBJECT",
+    "Sight",
     "centre_of",
+    "clear_faces",
     "expand_ids",
     "frame_box",
     "predicted_layout",

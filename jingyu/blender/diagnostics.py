@@ -49,10 +49,11 @@ def light_pass(
     scene: Any,
     objects: Sequence[BuiltObject],
     lights: Sequence[tuple[str, str, Any]],
-    refractive: set[str],
+    clear_materials: set[str],
     filepath: Path,
 ) -> dict[str, Any]:
-    """Run the light pass; *lights* are ``(id, kind, blender_object)``."""
+    """Run the light pass; *lights* are ``(id, kind, blender_object)``; faces wearing one
+    of *clear_materials* (glass) let the light through."""
 
     for obj in scene.objects:
         if obj.type == "MESH":
@@ -83,7 +84,9 @@ def light_pass(
             normal = -normal
         bits = 0
         for bit, (light_id, kind, lamp) in enumerate(lights):
-            caster = _occluder(scene, depsgraph, location, normal, kind, lamp, refractive, by_name)
+            caster = _occluder(
+                scene, depsgraph, location, normal, kind, lamp, clear_materials, by_name
+            )
             if caster is None:
                 bits |= 1 << bit
                 lit[receiver][light_id] += 1
@@ -184,7 +187,7 @@ def _occluder(
     normal: Vector,
     kind: str,
     lamp: Any,
-    refractive: set[str],
+    clear_materials: set[str],
     by_name: dict[str, str],
 ) -> str | None:
     """None when *lamp* reaches *point*; "" when it faces away; else the caster id."""
@@ -209,13 +212,13 @@ def _occluder(
         return None
     origin = point + normal * _EPSILON
     for _ in range(_MAX_PASS_THROUGH):
-        hit, location, _, _, obj, _ = scene.ray_cast(
+        hit, location, _, face, obj, _ = scene.ray_cast(
             depsgraph, origin, direction, distance=distance
         )
         if not hit or obj is None:
             return None
         caster = by_name.get(obj.name)
-        if caster is None or caster not in refractive:
+        if caster is None or not _transmits(obj, face, clear_materials):
             return caster or obj.name
         travelled = (location - origin).length + _EPSILON
         origin = location + direction * _EPSILON
@@ -223,6 +226,18 @@ def _occluder(
         if distance <= 0:
             return None
     return None
+
+
+def _transmits(obj: Any, face: int, clear_materials: set[str]) -> bool:
+    """Whether the face of *obj* a ray hit wears a material that lets light through."""
+
+    slots = obj.material_slots
+    if not slots or obj.type != "MESH":
+        return False
+    polygons = obj.data.polygons
+    slot = polygons[face].material_index if 0 <= face < len(polygons) else 0
+    material = slots[min(slot, len(slots) - 1)].material
+    return material is not None and material.name in clear_materials
 
 
 def _in_view(scene: Any, camera: Any, obj: Any) -> bool:

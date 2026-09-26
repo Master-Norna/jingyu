@@ -204,7 +204,8 @@ def _id_mask(candidate: Candidate) -> tuple[Image.Image, dict[str, Any]]:
                 continue
             if index not in legend:
                 entry = mask.entry(index) or {"object": f"#{index}"}
-                legend[index] = {"object": entry["object"], "color": _distinct_color(index)}
+                label = entry["object"] + (f" / {entry['part']}" if entry.get("part") else "")
+                legend[index] = {"object": label, "color": _distinct_color(index)}
             offset = (y * mask.width + x) * 3
             rgb[offset : offset + 3] = bytes(legend[index]["color"])
     out = Image.frombytes("RGB", (mask.width, mask.height), bytes(rgb))

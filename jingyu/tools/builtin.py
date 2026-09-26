@@ -18,7 +18,7 @@ from ..geometry import GEOMETRY
 from ..lighting import LightMap
 from ..locate import Box, IdMask
 from ..materials import MATERIALS
-from ..measure import colors_by_object, object_color_report
+from ..measure import colors_by_index, colors_by_object, object_color_report
 from ..render import render_scene
 from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
 from ..scene.diff import diff_scenes
@@ -504,18 +504,18 @@ def _add_colors(
 ) -> None:
     """Attach rendered colours (and their drift from the material) to located objects."""
 
-    colors = colors_by_object(mask, image, box)
-    by_object = {
-        (mask.entry(index) or {}).get("object"): (index, rgb) for index, rgb in colors.items()
+    colors = colors_by_index(mask, image, box)
+    by_entry = {
+        ((mask.entry(index) or {}).get("object"), (mask.entry(index) or {}).get("part")): rgb
+        for index, rgb in colors.items()
     }
-    rows = result.get("objects") or result.get("neighborhood") or []
+    rows = [*(result.get("objects") or result.get("neighborhood") or [])]
+    if result.get("hit") is not None:
+        rows.append(result["hit"])
     for row in rows:
-        found = by_object.get(row.get("object"))
+        found = by_entry.get((row.get("object"), row.get("part")))
         if found is not None:
-            row.update(object_color_report(found[1], scene, row.get("material")))
-    hit = result.get("hit")
-    if hit is not None and hit.get("object") in by_object:
-        hit.update(object_color_report(by_object[hit["object"]][1], scene, hit.get("material")))
+            row.update(object_color_report(found, scene, row.get("material")))
 
 
 def _describe_layout(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -525,8 +525,7 @@ def _describe_layout(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     scene = candidate.scene()
     with Image.open(candidate.image_path) as image:
         image.load()
-        colors = colors_by_object(mask, image)
-    names = {(mask.entry(i) or {}).get("object"): rgb for i, rgb in colors.items()}
+        names = colors_by_object(mask, image)
     lights = LightMap.load(candidate).document["objects"] if candidate.has_light_map else {}
     for row in layout["objects"]:
         if row["object"] in names:

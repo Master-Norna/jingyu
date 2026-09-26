@@ -97,10 +97,7 @@ def _open_to_sky(scene: Mapping[str, Any], light_map: Mapping[str, Any]) -> list
     environment = scene["world"].get("environment")
     if environment is None or environment.get("family") != "daylight":
         return []
-    has_openings = any(
-        o["visible"] and o["geometry"]["op"] == "wall" and o["geometry"].get("openings")
-        for o in scene["objects"]
-    )
+    has_openings = any(o["visible"] and o["geometry"].get("openings") for o in scene["objects"])
     openness = light_map.get("openness", {})
     upward = float(openness.get("open_upward_fraction", 0.0))
     if not has_openings or upward <= OPEN_UPWARD_FRACTION:

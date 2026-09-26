@@ -166,9 +166,31 @@ def _check_hierarchy(scene: Mapping[str, Any]) -> list[Issue]:
 
 def _check_generators(scene: Mapping[str, Any]) -> list[Issue]:
     issues: list[Issue] = []
+    materials = {m["id"] for m in scene["materials"]}
     for index, obj in enumerate(scene["objects"]):
         geometry = obj["geometry"]
         definition = GEOMETRY.get(geometry["op"])
+        for part, material in (obj.get("part_materials") or {}).items():
+            pointer = pointer_join("objects", index, "part_materials", part)
+            if part not in definition.parts:
+                parts = ", ".join(definition.parts) or "none: it is one piece"
+                issues.append(
+                    Issue(
+                        "spec.unknown_reference",
+                        f"{geometry['op']} has no part {part!r}",
+                        pointer,
+                        hint=f"parts of {geometry['op']}: {parts}",
+                    )
+                )
+            elif material not in materials:
+                issues.append(
+                    Issue(
+                        "spec.unknown_reference",
+                        f"material {material!r} is not defined",
+                        pointer,
+                        hint=f"defined materials: {sorted(materials) or 'none'}",
+                    )
+                )
         params = {k: v for k, v in geometry.items() if k != "op"}
         for param, message in definition.check(params):
             issues.append(

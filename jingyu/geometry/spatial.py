@@ -210,15 +210,25 @@ def vertical_contacts(upper: WorldMesh, lower: WorldMesh) -> list[float]:
     return shifts
 
 
-def rest_shift(upper: WorldMesh, lower: WorldMesh) -> float | None:
-    """Vertical move that sets *upper* on the topmost surface of *lower* beneath it.
+#: A support surface this far above an object's lowest point still counts as below it.
+REST_TOLERANCE = 0.001
 
-    It is where *upper* would first touch *lower* when lowered from far above;
-    None when no part of *lower* lies under *upper*.
+
+def rest_shift(upper: WorldMesh, lower: WorldMesh) -> float | None:
+    """Vertical move that sets *upper* on the surface of *lower* it would land on.
+
+    *upper* falls from where it is: onto the nearest surface of *lower* below it
+    (a shelf board under a book, the floor of a room).  When no surface of *lower*
+    is below it (it was placed at height 0 on a table), it is lowered from far
+    above instead, onto the topmost surface.  None when no part of *lower* lies
+    under *upper* at all.
     """
 
     shifts = vertical_contacts(upper, lower)
-    return max(shifts) if shifts else None
+    if not shifts:
+        return None
+    below = [shift for shift in shifts if shift <= REST_TOLERANCE]
+    return max(below) if below else max(shifts)
 
 
 def drop_gap(upper: WorldMesh, lower: WorldMesh, tolerance: float) -> float | None:
@@ -233,6 +243,7 @@ def drop_gap(upper: WorldMesh, lower: WorldMesh, tolerance: float) -> float | No
 
 
 __all__ = [
+    "REST_TOLERANCE",
     "AxisIndex",
     "Hit",
     "WorldMesh",

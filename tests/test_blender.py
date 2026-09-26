@@ -382,3 +382,112 @@ def test_fill_light_and_reflector_card(runtime: BlenderRuntime, tmp_path: Path) 
             return sum(v * c for v, c in enumerate(gray.histogram())) / (gray.width * gray.height)
 
     assert mean(helped.candidate.image_path) > mean(plain.candidate.image_path) * 1.05
+
+
+def _furnished_room() -> dict[str, object]:
+    return {
+        "schema": "jingyu.scene.v1",
+        "id": "furnished",
+        "world": {"environment": {"family": "daylight", "sun_elevation": 30, "sun_azimuth": 90}},
+        "materials": [
+            {"id": "plaster", "family": "plastic", "color": "#e6e0d6", "gloss": 0.05},
+            {"id": "oak", "family": "plastic", "color": "#9a7048", "gloss": 0.3},
+            {"id": "steel", "family": "metal", "metal": "iron", "polish": 0.4},
+        ],
+        "objects": [
+            {
+                "id": "room",
+                "geometry": {
+                    "op": "room",
+                    "size": [4, 4, 2.6],
+                    "openings": [
+                        {
+                            "wall": "left",
+                            "x": 0.0,
+                            "sill": 0.8,
+                            "width": 1.2,
+                            "height": 1.3,
+                            "glass": True,
+                        }
+                    ],
+                },
+                "material": "plaster",
+                "part_materials": {"floor": "oak"},
+            },
+            {
+                "id": "table",
+                "geometry": {"op": "table", "size": [1.2, 0.7, 0.75]},
+                "material": "oak",
+                "part_materials": {"base": "steel"},
+                "rest_on": "room",
+            },
+            {
+                "id": "chair",
+                "geometry": {"op": "chair"},
+                "location": [0.2, -0.6, 0],
+                "rotation": [0, 0, 180],
+                "material": "oak",
+                "rest_on": "room",
+            },
+            {
+                "id": "shelf",
+                "geometry": {"op": "shelf", "size": [0.8, 0.3, 1.8], "shelves": 4},
+                "location": [0.8, 1.8, 0],
+                "material": "oak",
+                "rest_on": "room",
+            },
+            {
+                "id": "box",
+                "geometry": {"op": "box", "size": [0.2, 0.15, 0.1], "bevel": 0.004},
+                "location": [0.8, 1.8, 0.9],
+                "rest_on": "shelf",
+            },
+        ],
+        "cameras": [
+            {"id": "cam", "location": [1.6, -1.6, 1.5], "look_at": [0, 0.3, 0.8], "lens_mm": 24}
+        ],
+        "render": {"camera": "cam", "resolution": [320, 240], "samples": 8},
+    }
+
+
+def test_assemblies_parts_and_glass_render(runtime: BlenderRuntime, tmp_path: Path) -> None:
+    """Rooms, furniture and parts: materials per part, ids per part, light through glass."""
+
+    from jingyu.camera import CameraModel
+    from jingyu.scene import validate_scene
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    context = ToolContext(workspace, render_timeout_s=TIMEOUT_S)
+    target = [0.1, 0.0, 0.75]
+    sunny = REGISTRY.invoke(
+        "aim_sun",
+        {
+            "scene": _furnished_room(),
+            "target": {"point": target},
+            "through": {"object": "room", "opening": 0},
+        },
+        context,
+    ).data
+    scene = sunny["scene"]
+    result = validate_scene(scene)
+    placement = result.placement
+    # The box was put between two boards and fell onto the one below it.
+    box_bottom = placement.meshes["box"].bounds()[0][2]
+    assert 0.4 < box_bottom < 0.9
+    candidate = render_scene(
+        workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S
+    ).candidate
+    id_map = load_file_strict(candidate.file(ID_MAP_NAME))
+    table_parts = {e.get("part") for e in id_map["objects"].values() if e["object"] == "table"}
+    assert table_parts == {"top", "base"}
+    mask = IdMask.load(candidate)
+    layout = {o["object"]: o for o in mask.layout()["objects"]}
+    assert {p["part"] for p in layout["table"]["parts"]} == {"top", "base"}
+    assert {p["material"] for p in layout["table"]["parts"]} == {"oak", "steel"}
+    camera = CameraModel.from_scene(result.require_valid(), placement, resolution=(320, 240))
+    u, v, _ = camera.project(target) or (0, 0, 0)
+    hit = mask.locate_point({"u": u, "v": v})["hit"]
+    assert hit["object"] == "table" and hit["part"] == "top"
+    assert hit["part_pointer"] == "/objects/1/part_materials/top"
+    # The sun reaches the table top through the glass pane.
+    assert "environment.sun" in LightMap.load(candidate).at_uv(u, v)["lit_by"]

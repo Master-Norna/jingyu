@@ -50,13 +50,19 @@ class IdMask:
             int(k): dict(v) for k, v in id_map["objects"].items()
         }
         material_index = {m["id"]: i for i, m in enumerate(scene.get("materials", []))}
+        self._material_pointer = {
+            m: pointer_join("materials", i) for m, i in material_index.items()
+        }
         for entry in self._objects.values():
-            material = entry.get("material")
-            entry["material_pointer"] = (
-                pointer_join("materials", material_index[material])
-                if material in material_index
-                else None
-            )
+            entry["material_pointer"] = self._material_pointer.get(entry.get("material"))
+            if entry.get("part") is not None:
+                entry["part_pointer"] = entry["pointer"] + pointer_join(
+                    "part_materials", entry["part"]
+                )
+        #: The object's own material (the parts of an assembled object may differ).
+        self._own_material = {
+            o.get("id"): o.get("material") for o in scene.get("objects", []) if isinstance(o, dict)
+        }
         self._scene_objects = [
             o["id"]
             for o in scene.get("objects", [])
@@ -142,12 +148,20 @@ class IdMask:
         entry = self._objects.get(index)
         if entry is None:
             raise JingyuError("locate.ambiguous_pixels", f"mask index {index} is not in the id map")
-        return {
+        described = {
             "object": entry["object"],
             "pointer": entry["pointer"],
             "material": entry.get("material"),
             "material_pointer": entry.get("material_pointer"),
         }
+        if entry.get("part") is not None:
+            described["part"] = entry["part"]
+            described["part_pointer"] = entry["part_pointer"]
+        return described
+
+    def object_of(self, index: int) -> str | None:
+        entry = self._objects.get(index)
+        return None if entry is None else str(entry["object"])
 
     def locate_point(self, point: Mapping[str, Any], radius: int = 3) -> dict[str, Any]:
         x, y = self.to_pixel(point)
@@ -208,9 +222,47 @@ class IdMask:
                     s[5] += x
                     s[6] += y
         total = self.width * self.height
-        objects = []
+        merged: dict[str, list[float]] = {}
+        parts: dict[str, list[dict[str, Any]]] = {}
         for index, (count, x0, y0, x1, y1, sx, sy) in stats.items():
-            entry = self.describe_entry(index)
+            entry = self._objects[index]
+            name = str(entry["object"])
+            if entry.get("part") is not None:
+                parts.setdefault(name, []).append(
+                    {
+                        "part": entry["part"],
+                        "material": entry.get("material"),
+                        "part_pointer": entry["part_pointer"],
+                        "pixels": int(count),
+                    }
+                )
+            m = merged.get(name)
+            if m is None:
+                merged[name] = [count, x0, y0, x1, y1, sx, sy]
+            else:
+                m[0] += count
+                m[1], m[2] = min(m[1], x0), min(m[2], y0)
+                m[3], m[4] = max(m[3], x1), max(m[4], y1)
+                m[5] += sx
+                m[6] += sy
+        first = {str(e["object"]): e for e in self._objects.values()}
+        objects = []
+        for name, (count, x0, y0, x1, y1, sx, sy) in merged.items():
+            own = self._own_material.get(name)
+            entry = {
+                "object": name,
+                "pointer": first[name]["pointer"],
+                "material": own,
+                "material_pointer": self._material_pointer.get(own),
+            }
+            if name in parts:
+                entry["parts"] = sorted(
+                    (
+                        {**p, "fraction_of_object": round(p["pixels"] / count, 4)}
+                        for p in parts[name]
+                    ),
+                    key=lambda p: -p["pixels"],
+                )
             objects.append(
                 {
                     **entry,
@@ -245,8 +297,15 @@ class IdMask:
         }
 
     def _visible_totals(self) -> dict[int, int]:
+        """Per index, the pixels of the whole object it belongs to (all its parts)."""
+
         full = self.counts(Box(0, 0, self.width, self.height))
-        return {k: v for k, v in full.items() if k}
+        by_object: dict[str | None, int] = {}
+        for index, count in full.items():
+            if index:
+                name = self.object_of(index)
+                by_object[name] = by_object.get(name, 0) + count
+        return {k: by_object[self.object_of(k)] for k in full if k}
 
     def _breakdown(
         self, counts: Counter[int | None], area: int, totals: Mapping[int, int] | None

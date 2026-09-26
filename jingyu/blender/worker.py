@@ -104,7 +104,7 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
         mark = time.perf_counter()
         light_mask = output_dir / "light_mask.png"
         light_map = diagnostics.light_pass(
-            scene, built.visible, built.lights, built.transmissive, light_mask
+            scene, built.visible, built.lights, built.transmissive_materials, light_mask
         )
         outputs["light_mask"] = light_mask.name
         timings["light_ms"] = _ms_since(mark)

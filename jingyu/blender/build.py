@@ -6,11 +6,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..canonical_json import canonical_bytes
 from ..conventions import kelvin_to_linear, srgb_hex_to_linear, sun_rotation_deg
 from ..environments import ENVIRONMENTS, EnvironmentRecipe
 from ..errors import JingyuError, pointer_join
 from ..geometry import GEOMETRY
-from ..materials import MATERIALS, Recipe
+from ..materials import MATERIALS
+from ..materials.assign import PartMaterial, part_materials
 from ..placement import aim_matrix, resolve_placement
 from . import compat, kit
 
@@ -29,6 +31,10 @@ class BuiltObject:
     blender_object: Any
     #: False for objects the camera must not see (reflector cards, flags).
     camera_visible: bool = True
+    #: Material slot i dresses part parts[i] (a single None for a one-piece mesh)
+    #: with the scene material slot_materials[i] (None for a default).
+    parts: tuple[str | None, ...] = (None,)
+    slot_materials: tuple[str | None, ...] = (None,)
 
 
 @dataclass
@@ -38,8 +44,7 @@ class BuildResult:
     sky_model: str | None = None
     #: (light id, kind, Blender object) for every light, the environment's sun included.
     lights: list[tuple[str, str, Any]] = field(default_factory=list)
-    #: Ids of objects whose material transmits light (glass).
-    transmissive: set[str] = field(default_factory=set)
+    #: Names of Blender materials that transmit light (glass).
     transmissive_materials: set[str] = field(default_factory=set)
     warnings: list[dict[str, str]] = field(default_factory=list)
 
@@ -107,32 +112,49 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
             refractive_materials.append(material)
             result.transmissive_materials.add(entry["id"])
 
-    default_material: Any = None
+    defaults: dict[str, Any] = {}
+
+    def default_for(assigned: PartMaterial) -> Any:
+        """The Blender material for a part without a scene material."""
+
+        spec_ = assigned.default or {"family": "principled", "base_color": DEFAULT_MATERIAL_COLOR}
+        key = canonical_bytes(spec_).decode("utf-8")
+        if key not in defaults:
+            name = (
+                DEFAULT_MATERIAL_NAME if assigned.default is None else f"__jingyu_{len(defaults)}__"
+            )
+            recipe = MATERIALS.run(spec_)
+            defaults[key] = kit.principled_material(name, recipe)
+            if recipe.refractive:
+                refractive_materials.append(defaults[key])
+                result.transmissive_materials.add(name)
+        return defaults[key]
+
     for index, entry in enumerate(spec["objects"]):
         pointer = pointer_join("objects", index)
         try:
             mesh = GEOMETRY.run(entry["geometry"])
         except (KeyError, ValueError) as exc:
             raise _build_error(pointer + "/geometry", exc) from exc
-        obj = kit.new_mesh_object(scene, entry["id"], mesh)
+        assignment = part_materials(entry, GEOMETRY.get(entry["geometry"]["op"]))
+        slots = [
+            materials[a.material] if a.material is not None else default_for(a)
+            for a in assignment.values()
+        ]
+        obj = kit.new_mesh_object(scene, entry["id"], mesh, slots)
         kit.set_world_matrix(obj, placement.world[entry["id"]])
-        material_id = entry.get("material")
-        if material_id is not None:
-            material = materials[material_id]
-        else:
-            if default_material is None:
-                default_material = kit.principled_material(
-                    DEFAULT_MATERIAL_NAME,
-                    Recipe(base_color=srgb_hex_to_linear(DEFAULT_MATERIAL_COLOR)),
-                )
-            material = default_material
-        kit.assign_material(obj, material)
         obj.hide_render = not entry["visible"]
         obj.visible_camera = bool(entry["camera_visible"])
-        if material_id in result.transmissive_materials:
-            result.transmissive.add(entry["id"])
         result.objects.append(
-            BuiltObject(entry["id"], pointer, material_id, obj, bool(entry["camera_visible"]))
+            BuiltObject(
+                entry["id"],
+                pointer,
+                entry.get("material"),
+                obj,
+                bool(entry["camera_visible"]),
+                tuple(assignment),
+                tuple(a.material for a in assignment.values()),
+            )
         )
 
     for entry in spec["lights"]:

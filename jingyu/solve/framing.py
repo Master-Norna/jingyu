@@ -23,10 +23,18 @@ from typing import Any, Literal
 
 from ..camera import CameraModel
 from ..errors import JingyuError
-from ..geometry.raycast import cast, unit
+from ..geometry.raycast import unit
 from ..geometry.transform import Vec3, look_rotation, solve_linear, with_translation
 from ..placement import Placement
-from .common import centre_of, expand_ids, frame_box, predicted_layout, round_vec, sample_points
+from .common import (
+    Sight,
+    centre_of,
+    expand_ids,
+    frame_box,
+    predicted_layout,
+    round_vec,
+    sample_points,
+)
 
 SizeOf = Literal["larger", "width", "height"]
 
@@ -118,6 +126,7 @@ def frame_subject(
         },
         "frame": predicted_layout(scene, placement, camera),
         "warnings": _warnings(
+            scene,
             {o["id"] for o in scene["objects"] if not (o["visible"] and o["camera_visible"])},
             placement,
             camera,
@@ -347,6 +356,7 @@ def _solve_orthographic(
 
 
 def _warnings(
+    scene: Mapping[str, Any],
     unseen: set[str],
     placement: Placement,
     camera: CameraModel,
@@ -382,17 +392,13 @@ def _warnings(
         )
     blockers: dict[str, int] = {}
     checked = points[:: max(1, len(points) // 96)]
-    others = {
-        k: v
-        for k, v in placement.meshes.items()
-        if k not in subject and k not in inside and k not in unseen
-    }
+    sight = Sight(scene, placement, skip={*subject, *inside, *unseen})
     for point in checked:
         offset = tuple(p - c for p, c in zip(point, camera.position, strict=True))
         length = math.hypot(*offset)
         if length < 1e-9:
             continue
-        found = cast(others, camera.position, unit(offset), length - 1e-4)
+        found = sight.cast(camera.position, unit(offset), length - 1e-4)
         if found is not None:
             blockers[found.object] = blockers.get(found.object, 0) + 1
     for obj_id, count in sorted(blockers.items(), key=lambda item: -item[1]):

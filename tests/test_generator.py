@@ -63,7 +63,17 @@ def test_catalog_lists_every_generator(registry: GeneratorRegistry[Any]) -> None
     for entry in catalog:
         assert entry["summary"].strip()
         assert isinstance(entry["params"], dict)
-        assert set(entry) == {"name", "summary", "params", "required", "examples"}
+        base = {"name", "summary", "params", "required", "examples"}
+        assert base <= set(entry) <= base | {"parts"}
+        if "parts" in entry:
+            assert all(p["description"] for p in entry["parts"].values())
+
+
+def test_assembled_ops_list_their_parts_and_part_defaults() -> None:
+    wall = next(entry for entry in GEOMETRY.catalog() if entry["name"] == "wall")
+    assert list(wall["parts"]) == ["walls", "frames", "glass"]
+    assert wall["parts"]["glass"]["default_material"] == {"family": "glass", "thin": True}
+    assert "default_material" not in wall["parts"]["frames"]
 
 
 def test_catalog_entries_are_copies() -> None:

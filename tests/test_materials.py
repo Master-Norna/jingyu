@@ -154,6 +154,7 @@ def test_recipe_to_dict_uses_lists_for_colours() -> None:
         "emission_color",
         "emission_strength",
         "alpha",
+        "thin",
     }
 
 

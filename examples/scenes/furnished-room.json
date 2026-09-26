@@ -1,0 +1,182 @@
+{
+  "cameras": [
+    {
+      "id": "cam",
+      "lens_mm": 24.0,
+      "location": [
+        1.3584,
+        -1.3931,
+        1.1575
+      ],
+      "look_at": [
+        0.1894,
+        -0.0645,
+        0.3904
+      ]
+    }
+  ],
+  "id": "furnished-room",
+  "intent": "午后的阳光透过左侧玻璃窗斜落在桌面和地板上，窗框的影子投在光斑里，房间其余部分安静地暗下去。",
+  "lights": [
+    {
+      "id": "bounce",
+      "kind": "fill",
+      "location": [
+        1.8,
+        -1.5,
+        1.4
+      ],
+      "look_at": [
+        0,
+        0,
+        0.6
+      ],
+      "power_w": 15,
+      "size": 1.5
+    }
+  ],
+  "materials": [
+    {
+      "color": "#e6e0d6",
+      "family": "plastic",
+      "gloss": 0.05,
+      "id": "plaster"
+    },
+    {
+      "color": "#9a7048",
+      "family": "plastic",
+      "gloss": 0.3,
+      "id": "oak"
+    },
+    {
+      "family": "metal",
+      "id": "steel",
+      "metal": "iron",
+      "polish": 0.4
+    },
+    {
+      "color": "#d8cfbf",
+      "family": "plastic",
+      "gloss": 0.05,
+      "id": "linen"
+    }
+  ],
+  "notes": "装配生成器的验收图：房间、桌、椅、书架各是一次生成器调用；机位由 frame_subject、太阳由 aim_sun 求出。",
+  "objects": [
+    {
+      "geometry": {
+        "op": "room",
+        "openings": [
+          {
+            "glass": true,
+            "height": 1.3,
+            "sill": 0.8,
+            "wall": "left",
+            "width": 1.2,
+            "x": 0.0
+          }
+        ],
+        "size": [
+          4,
+          4,
+          2.6
+        ]
+      },
+      "id": "room",
+      "material": "plaster",
+      "part_materials": {
+        "floor": "oak"
+      }
+    },
+    {
+      "geometry": {
+        "op": "table",
+        "size": [
+          1.2,
+          0.7,
+          0.75
+        ]
+      },
+      "id": "table",
+      "material": "oak",
+      "part_materials": {
+        "base": "steel"
+      },
+      "rest_on": "room"
+    },
+    {
+      "geometry": {
+        "op": "chair"
+      },
+      "id": "chair",
+      "location": [
+        0.2,
+        -0.6,
+        0
+      ],
+      "material": "oak",
+      "rest_on": "room",
+      "rotation": [
+        0,
+        0,
+        180
+      ]
+    },
+    {
+      "geometry": {
+        "op": "shelf",
+        "shelves": 4,
+        "size": [
+          0.8,
+          0.3,
+          1.8
+        ]
+      },
+      "id": "shelf",
+      "location": [
+        0.8,
+        1.8,
+        0
+      ],
+      "material": "oak",
+      "rest_on": "room"
+    },
+    {
+      "geometry": {
+        "bevel": 0.004,
+        "op": "box",
+        "size": [
+          0.2,
+          0.15,
+          0.1
+        ]
+      },
+      "id": "box",
+      "location": [
+        0.8,
+        1.8,
+        0.9
+      ],
+      "material": "linen",
+      "rest_on": "shelf"
+    }
+  ],
+  "render": {
+    "camera": "cam",
+    "exposure": 0.3,
+    "resolution": [
+      1280,
+      960
+    ],
+    "samples": 64
+  },
+  "schema": "jingyu.scene.v1",
+  "title": "有家具的房间：窗、桌、椅、书架，一件盒子放在书架上",
+  "world": {
+    "environment": {
+      "family": "daylight",
+      "sun_azimuth": 180.0,
+      "sun_elevation": 17.84
+    }
+  }
+}

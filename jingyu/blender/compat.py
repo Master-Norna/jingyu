@@ -141,6 +141,17 @@ def enable_eevee_refraction(scene: Any, material: Any) -> None:
         scene.eevee.use_raytracing = True
 
 
+def enable_transparency(material: Any) -> None:
+    """Let EEVEE show and shadow through a transparent surface (Cycles needs nothing)."""
+
+    if hasattr(material, "surface_render_method"):
+        material.surface_render_method = "DITHERED"
+    elif hasattr(material, "blend_method"):  # pragma: no cover - before 4.2
+        material.blend_method = "HASHED"
+    if hasattr(material, "use_transparent_shadow"):
+        material.use_transparent_shadow = True
+
+
 def configure_sky(node: Any, elevation_deg: float, azimuth_deg: float, haze: float) -> str:
     """Set a sky texture node to a physical daylight sky without a sun disc.
 
@@ -185,6 +196,7 @@ __all__ = [
     "configure_sky",
     "cycles_preferences",
     "enable_eevee_refraction",
+    "enable_transparency",
     "ensure_node_tree",
     "refresh_cycles_devices",
     "require_supported_version",

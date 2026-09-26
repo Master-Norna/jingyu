@@ -81,9 +81,32 @@ def color_shift(rendered: Mapping[str, Any], authored: Mapping[str, Any]) -> dic
 
 def colors_by_object(
     mask: IdMask, image: Image.Image, box: Box | None = None
-) -> dict[int, tuple[float, float, float]]:
-    """Mean rendered sRGB colour of each object's pixels, within *box* if given."""
+) -> dict[str, tuple[float, float, float]]:
+    """Mean rendered sRGB colour of each object's pixels (all its parts), within *box*."""
 
+    merged: dict[str, list[float]] = {}
+    for index, (rgb, count) in _colors_by_index(mask, image, box).items():
+        name = mask.object_of(index)
+        if name is None:
+            continue
+        total = merged.setdefault(name, [0.0, 0.0, 0.0, 0.0])
+        for k in range(3):
+            total[k] += rgb[k] * count
+        total[3] += count
+    return {name: (t[0] / t[3], t[1] / t[3], t[2] / t[3]) for name, t in merged.items()}
+
+
+def colors_by_index(
+    mask: IdMask, image: Image.Image, box: Box | None = None
+) -> dict[int, tuple[float, float, float]]:
+    """Mean rendered sRGB colour per id mask entry (an object, or one of its parts)."""
+
+    return {index: rgb for index, (rgb, _) in _colors_by_index(mask, image, box).items()}
+
+
+def _colors_by_index(
+    mask: IdMask, image: Image.Image, box: Box | None
+) -> dict[int, tuple[tuple[float, float, float], int]]:
     rgb = image.convert("RGB")
     if rgb.size != (mask.width, mask.height):
         rgb = rgb.resize((mask.width, mask.height), Image.Resampling.NEAREST)
@@ -102,7 +125,7 @@ def colors_by_object(
             s[2] += data[offset + 2]
             s[3] += 1
     return {
-        index: (s[0] / s[3] / 255.0, s[1] / s[3] / 255.0, s[2] / s[3] / 255.0)
+        index: ((s[0] / s[3] / 255.0, s[1] / s[3] / 255.0, s[2] / s[3] / 255.0), s[3])
         for index, s in sums.items()
     }
 
@@ -122,6 +145,7 @@ def object_color_report(
 
 __all__ = [
     "color_shift",
+    "colors_by_index",
     "colors_by_object",
     "describe_color",
     "hex_color",

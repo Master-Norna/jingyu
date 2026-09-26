@@ -27,6 +27,9 @@ class Recipe:
     emission_color: RGB = (1.0, 1.0, 1.0)
     emission_strength: float = 0.0
     alpha: float = 1.0
+    #: A thin transparent sheet (a window pane): light passes straight through
+    #: without bending, and shadows let it through; only the surface reflects.
+    thin: bool = False
 
     def __post_init__(self) -> None:
         for name in (

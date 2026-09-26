@@ -5,7 +5,8 @@
   ``lens_mm``).
 * The world is right-handed and Z-up.  Rotations are XYZ Euler angles.
 * Generated geometry stands on its origin: the origin is the bottom centre of
-  the object's bounding box (flat shapes such as planes are centred).
+  the object's bounding box (flat shapes such as planes are centred; a room stands
+  on its floor surface, its floor slab below the origin).
 * Colours in documents are sRGB hex strings (``#rrggbb``); renderers receive
   scene-linear values converted by :func:`srgb_hex_to_linear`.
 * Ids are lowercase ASCII slugs matching :data:`ID_PATTERN`.
