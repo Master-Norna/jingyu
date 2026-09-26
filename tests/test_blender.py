@@ -491,3 +491,78 @@ def test_assemblies_parts_and_glass_render(runtime: BlenderRuntime, tmp_path: Pa
     assert hit["part_pointer"] == "/objects/1/part_materials/top"
     # The sun reaches the table top through the glass pane.
     assert "environment.sun" in LightMap.load(candidate).at_uv(u, v)["lit_by"]
+
+
+def test_texture_weathering_and_mist_render(runtime: BlenderRuntime, tmp_path: Path) -> None:
+    """Procedural texture varies across a surface; the mist box stays out of the passes."""
+
+    workspace = Workspace.at(tmp_path / "workspace")
+    scene = {
+        "schema": "jingyu.scene.v1",
+        "id": "textures",
+        "world": {
+            "environment": {"family": "uniform", "color": "#c8cdd4", "strength": 0.6, "mist": 0.15}
+        },
+        "materials": [
+            {"id": "oak", "family": "wood", "ring_size": 0.01},
+            {"id": "flat", "family": "plastic", "color": "#b58658", "gloss": 0.3},
+            {
+                "id": "paint",
+                "family": "plastic",
+                "color": "#3d6b8c",
+                "weathering": {"wear": 0.7, "dust": 0.5},
+            },
+        ],
+        "objects": [
+            {
+                "id": "wood",
+                "geometry": {"op": "box", "size": [0.3, 0.3, 0.3], "bevel": 0.01},
+                "location": [-0.2, 0, 0],
+                "material": "oak",
+            },
+            {
+                "id": "plain",
+                "geometry": {"op": "box", "size": [0.3, 0.3, 0.3], "bevel": 0.01},
+                "location": [0.2, 0, 0],
+                "material": "flat",
+            },
+            {
+                "id": "old",
+                "geometry": {"op": "vessel", "wobble": 0.5},
+                "location": [0, 0.4, 0],
+                "material": "paint",
+            },
+        ],
+        "lights": [
+            {
+                "id": "key",
+                "kind": "area",
+                "location": [-1, -1.5, 1.5],
+                "look_at": [0, 0, 0.1],
+                "power_w": 300,
+            }
+        ],
+        "cameras": [
+            {"id": "cam", "location": [0, -1.2, 0.5], "look_at": [0, 0.1, 0.15], "lens_mm": 40}
+        ],
+        "render": {"camera": "cam", "resolution": [320, 240], "samples": 16},
+    }
+    candidate = render_scene(
+        workspace, scene, quality="final", runtime=runtime, timeout_s=TIMEOUT_S
+    ).candidate
+    mask = IdMask.load(candidate)
+    layout = mask.layout()
+    assert {o["object"] for o in layout["objects"]} == {"wood", "plain", "old"}
+    assert layout["unassigned_pixels"] == 0
+    assert set(LightMap.load(candidate).document["in_view"]) == {"wood", "plain", "old"}
+
+    def spread(name: str) -> float:
+        box = next(o for o in layout["objects"] if o["object"] == name)["bbox"]
+        inner = (box["x0"] + 8, box["y0"] + 8, box["x1"] - 8, box["y1"] - 8)
+        with Image.open(candidate.image_path) as image:
+            gray = image.convert("L").crop(inner)
+            values = [gray.getpixel((x, y)) for y in range(gray.height) for x in range(gray.width)]
+        mean = sum(values) / len(values)
+        return (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+
+    assert spread("wood") > spread("plain") + 3

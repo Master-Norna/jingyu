@@ -40,28 +40,46 @@
       "color": "#e6e0d6",
       "family": "plastic",
       "gloss": 0.05,
-      "id": "plaster"
+      "id": "plaster",
+      "texture": 0.35
     },
     {
-      "color": "#9a7048",
-      "family": "plastic",
-      "gloss": 0.3,
-      "id": "oak"
+      "color": "#b58658",
+      "family": "wood",
+      "finish": 0.4,
+      "grain_color": "#7a5230",
+      "id": "oak",
+      "weathering": {
+        "dust": 0.15,
+        "wear": 0.3
+      }
+    },
+    {
+      "color": "#8a6242",
+      "family": "wood",
+      "finish": 0.6,
+      "grain_color": "#5a3b24",
+      "id": "floorboards",
+      "ring_size": 0.007,
+      "seed": 3,
+      "weathering": {
+        "grime": 0.2
+      }
     },
     {
       "family": "metal",
       "id": "steel",
       "metal": "iron",
-      "polish": 0.4
+      "polish": 0.45,
+      "tarnish": 0.15
     },
     {
       "color": "#d8cfbf",
-      "family": "plastic",
-      "gloss": 0.05,
+      "family": "fabric",
       "id": "linen"
     }
   ],
-  "notes": "装配生成器的验收图：房间、桌、椅、书架各是一次生成器调用；机位由 frame_subject、太阳由 aim_sun 求出。",
+  "notes": "装配生成器与质感层的验收图：房间、桌、椅、书架各是一次生成器调用，木纹、灰泥、织物来自程序纹理，桌面有轻微磨损和积尘；机位由 frame_subject、太阳由 aim_sun 求出。",
   "objects": [
     {
       "geometry": {
@@ -85,7 +103,7 @@
       "id": "room",
       "material": "plaster",
       "part_materials": {
-        "floor": "oak"
+        "floor": "floorboards"
       }
     },
     {
@@ -175,6 +193,7 @@
   "world": {
     "environment": {
       "family": "daylight",
+      "mist": 0.12,
       "sun_azimuth": 180.0,
       "sun_elevation": 17.84
     }

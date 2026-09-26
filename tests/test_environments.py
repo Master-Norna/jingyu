@@ -102,3 +102,16 @@ def test_sun_rotation_points_the_lamp_away_from_the_sun() -> None:
 @pytest.mark.parametrize(("low", "high"), [(0, 5), (5, 20), (20, 60)])
 def test_sun_warms_as_it_sinks(low: float, high: float) -> None:
     assert sun_temperature_k(low) < sun_temperature_k(high)
+
+
+def test_mist_fills_the_air_and_zero_leaves_it_clear() -> None:
+    from jingyu.environments.families import MIST_DENSITY
+
+    clear = ENVIRONMENTS.run({"family": "daylight"})
+    assert clear.air is None
+    misty = ENVIRONMENTS.run({"family": "daylight", "mist": 0.5, "mist_color": "#ffe0c0"})
+    assert misty.air is not None
+    assert misty.air.density == pytest.approx(MIST_DENSITY * 0.25)
+    assert misty.air.color[0] > misty.air.color[2]
+    studio = ENVIRONMENTS.run({"family": "uniform", "mist": 0.2, "mist_glow": 0.0})
+    assert studio.air is not None and studio.air.anisotropy == 0.0

@@ -21,10 +21,12 @@ import bpy
 from mathutils import Matrix
 
 from ..environments import EnvironmentRecipe
+from ..environments.recipe import Air
 from ..errors import JingyuError
 from ..geometry.mesh import MeshData
+from ..geometry.pieces import rounded_box
 from ..materials.recipe import RGB, Recipe
-from . import compat
+from . import compat, shading
 
 Vec3 = Sequence[float]
 
@@ -111,6 +113,10 @@ def principled_material(name: str, recipe: Recipe) -> Any:
     compat.set_principled_input(node, "coat_roughness", recipe.coat_roughness)
     compat.set_principled_input(node, "emission_color", (*recipe.emission_color, 1.0))
     compat.set_principled_input(node, "emission_strength", recipe.emission_strength)
+    if recipe.sheen_weight > 0:
+        compat.set_principled_input(node, "sheen_weight", recipe.sheen_weight)
+    if recipe.textured:
+        shading.build_textured(material, node, recipe)
     material.diffuse_color = (*recipe.base_color, recipe.alpha)
     material.metallic = recipe.metallic
     material.roughness = recipe.roughness
@@ -246,6 +252,35 @@ def set_world(scene: Any, environment: EnvironmentRecipe, strength: float) -> st
     links.new(upper, mix.inputs[2])
     links.new(mix.outputs["Shader"], output.inputs["Surface"])
     return model
+
+
+AIR_NAME = "__jingyu_air__"
+
+
+def new_air(scene: Any, air: Air, low: Vec3, high: Vec3) -> Any:
+    """A box of scattering air between *low* and *high* (world corners).
+
+    The air is bounded on purpose: an infinite medium would swallow the sun on its
+    way in from infinity and hide the sky behind every window.
+    """
+
+    material = bpy.data.materials.new(AIR_NAME)
+    compat.ensure_node_tree(material)
+    tree = material.node_tree
+    tree.nodes.clear()
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    scatter = tree.nodes.new("ShaderNodeVolumeScatter")
+    scatter.inputs["Color"].default_value = (*air.color, 1.0)
+    scatter.inputs["Density"].default_value = air.density
+    scatter.inputs["Anisotropy"].default_value = air.anisotropy
+    tree.links.new(scatter.outputs["Volume"], output.inputs["Volume"])
+    x0, y0, z0 = low
+    x1, y1, z1 = high
+    size = (x1 - x0, y1 - y0, z1 - z0)
+    box = rounded_box(size, 0.0)
+    obj = new_mesh_object(scene, AIR_NAME, box, [material])
+    obj.location = ((x0 + x1) / 2.0, (y0 + y1) / 2.0, z0)
+    return obj
 
 
 def select_cycles_device(scene: Any, want: str) -> str:

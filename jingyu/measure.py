@@ -16,7 +16,7 @@ from PIL import Image
 
 from .conventions import linear_to_srgb
 from .locate import Box, IdMask
-from .materials import MATERIALS
+from .materials.weathering import material_recipe
 
 
 def hex_color(rgb: Iterable[float]) -> str:
@@ -61,7 +61,7 @@ def material_color(scene: Mapping[str, Any], material_id: str | None) -> dict[st
     if entry is None:
         return None
     try:
-        recipe = MATERIALS.run({k: v for k, v in entry.items() if k != "id"})
+        recipe = material_recipe(entry)
     except (KeyError, ValueError):
         return None
     srgb = tuple(linear_to_srgb(c) for c in recipe.base_color)

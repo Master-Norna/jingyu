@@ -21,7 +21,7 @@ from ..conventions import (
     sun_temperature_k,
 )
 from ..generator import GeneratorDef, ParamProblem, number
-from .recipe import EnvironmentRecipe, Sky, Sun
+from .recipe import Air, EnvironmentRecipe, Sky, Sun
 
 #: The physical sky is far brighter than jingyu's sun strengths (a few W/m^2), so
 #: it is scaled to fill shadows at roughly a third of a clear midday sun
@@ -37,8 +37,48 @@ CLEAR_SKY_RADIANCE = 0.14
 OVERCAST_TEMPERATURE_K = 6500.0
 
 
+#: Scattering per metre at mist 1: thick fog, about 1.5 m of visibility.
+MIST_DENSITY = 2.0
+
+_AIR_PARAMS: dict[str, Any] = {
+    "mist": number(
+        "Dust or mist in the air, 0 clear to 1 thick fog. 0.1-0.3 indoors shows sunbeams "
+        "through a window as shafts and softens the far wall; outdoors it hazes the distance.",
+        default=0.0,
+        minimum=0.0,
+        maximum=1.0,
+    ),
+    "mist_color": {
+        "type": "string",
+        "pattern": COLOR_PATTERN,
+        "description": "Colour of the particles in the air (sRGB hex): white mist, warm dust.",
+        "default": "#ffffff",
+    },
+    "mist_glow": number(
+        "How much the air glows looking toward the light, 0 evenly to 0.9 a bright halo "
+        "with crisp shafts.",
+        default=0.4,
+        minimum=0.0,
+        maximum=0.9,
+    ),
+}
+
+
+def _air(p: Mapping[str, Any]) -> Air | None:
+    mist = float(p["mist"])
+    if mist <= 0.0:
+        return None
+    return Air(
+        density=MIST_DENSITY * mist * mist,
+        color=srgb_hex_to_linear(p["mist_color"]),
+        anisotropy=float(p["mist_glow"]),
+    )
+
+
 def _uniform(p: Mapping[str, Any]) -> EnvironmentRecipe:
-    return EnvironmentRecipe(fill=srgb_hex_to_linear(p["color"]), fill_strength=p["strength"])
+    return EnvironmentRecipe(
+        fill=srgb_hex_to_linear(p["color"]), fill_strength=p["strength"], air=_air(p)
+    )
 
 
 UNIFORM = GeneratorDef[EnvironmentRecipe](
@@ -52,6 +92,7 @@ UNIFORM = GeneratorDef[EnvironmentRecipe](
             "default": "#404040",
         },
         "strength": number("Brightness multiplier.", default=1.0, minimum=0.0),
+        **_AIR_PARAMS,
     },
     run=_uniform,
     examples=({"family": "uniform", "color": "#d8dde3", "strength": 0.6},),
@@ -103,6 +144,7 @@ def _daylight(p: Mapping[str, Any]) -> EnvironmentRecipe:
         sky=sky if sky.strength > 0.0 else None,
         sun=sun,
         ground=(albedo[0] * light[0], albedo[1] * light[1], albedo[2] * light[2]),
+        air=_air(p),
     )
 
 
@@ -183,12 +225,14 @@ DAYLIGHT = GeneratorDef[EnvironmentRecipe](
             minimum=0.0,
             maximum=100.0,
         ),
+        **_AIR_PARAMS,
     },
     run=_daylight,
     check=_check_daylight,
     examples=(
         {"family": "daylight", "sun_elevation": 12, "sun_azimuth": 200},
         {"family": "daylight", "sun_elevation": 50, "cloud_cover": 1},
+        {"family": "daylight", "sun_elevation": 20, "sun_azimuth": 160, "mist": 0.25},
     ),
 )
 

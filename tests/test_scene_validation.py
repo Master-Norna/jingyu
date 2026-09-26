@@ -104,6 +104,9 @@ def test_defaults_follow_the_selected_branch() -> None:
         "family": "metal",
         "metal": "silver",
         "polish": 0.8,
+        "brushed": 0.0,
+        "tarnish": 0.0,
+        "seed": 0,
     }
 
 
@@ -176,7 +179,7 @@ INVALID_CASES: list[tuple[str, Mutation, str, str]] = [
     ),
     (
         "unknown material family",
-        lambda s: s["materials"].append({"id": "oak", "family": "wood"}),
+        lambda s: s["materials"].append({"id": "oak", "family": "bamboo"}),
         "spec.schema_violation",
         "/materials/2/family",
     ),

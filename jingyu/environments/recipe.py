@@ -29,6 +29,25 @@ class Sky:
 
 
 @dataclass(frozen=True)
+class Air:
+    """A participating medium filling the scene: dust, haze or mist in the air.
+
+    It makes light visible on its way (shafts through a window, a glow around a
+    lamp) and softens the distance.
+    """
+
+    density: float  # scattering per metre
+    color: RGB  # scene-linear albedo of the particles
+    anisotropy: float  # -1..1; positive scatters forward (a halo toward the light)
+
+    def __post_init__(self) -> None:
+        if self.density < 0:
+            raise ValueError("air density must be non-negative")
+        if not -1.0 < self.anisotropy < 1.0:
+            raise ValueError("air anisotropy must lie strictly between -1 and 1")
+
+
+@dataclass(frozen=True)
 class EnvironmentRecipe:
     """Everything that lights a scene from outside it.
 
@@ -45,6 +64,8 @@ class EnvironmentRecipe:
     #: Radiance of the ground below the horizon (scene-linear); None means the
     #: background is the same above and below the horizon.
     ground: RGB | None = None
+    #: Dust, haze or mist in the air of the scene itself; None is clear air.
+    air: Air | None = None
 
     def __post_init__(self) -> None:
         if self.fill_strength < 0:

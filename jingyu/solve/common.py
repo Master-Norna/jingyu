@@ -14,7 +14,8 @@ from ..geometry.raycast import SceneHit, cast
 from ..geometry.spatial import WorldMesh
 from ..geometry.transform import Vec3
 from ..materials import MATERIALS
-from ..materials.assign import part_materials
+from ..materials.assign import PartMaterial, part_materials
+from ..materials.weathering import material_recipe
 from ..placement import Placement
 
 #: A ray passes through at most this many clear faces.
@@ -181,31 +182,20 @@ def clear_faces(
 ) -> dict[str, set[int] | None]:
     """Per object with clear surfaces, the faces that let light through (None: all)."""
 
-    refractive: dict[str, bool] = {}
+    clear_materials = {m["id"] for m in scene["materials"] if material_recipe(m).refractive}
 
-    def clear(spec: Mapping[str, Any]) -> bool:
-        key = repr(sorted(spec.items()))
-        if key not in refractive:
-            refractive[key] = MATERIALS.run(spec).refractive
-        return refractive[key]
+    def clear(assigned: PartMaterial) -> bool:
+        if assigned.material is not None:
+            return assigned.material in clear_materials
+        return assigned.default is not None and MATERIALS.run(assigned.default).refractive
 
-    materials = {m["id"]: {k: v for k, v in m.items() if k != "id"} for m in scene["materials"]}
     found: dict[str, set[int] | None] = {}
     for obj in scene["objects"]:
         mesh = meshes.get(obj["id"])
         if mesh is None:
             continue
         assignment = part_materials(obj, GEOMETRY.get(obj["geometry"]["op"]))
-        see_through = {
-            part
-            for part, assigned in assignment.items()
-            if (assigned.material is not None and clear(materials[assigned.material]))
-            or (
-                assigned.material is None
-                and assigned.default is not None
-                and clear(assigned.default)
-            )
-        }
+        see_through = {part for part, assigned in assignment.items() if clear(assigned)}
         if not see_through:
             continue
         if None in see_through:

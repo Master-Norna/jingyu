@@ -155,6 +155,9 @@ def test_recipe_to_dict_uses_lists_for_colours() -> None:
         "emission_strength",
         "alpha",
         "thin",
+        "sheen_weight",
+        "layers",
+        "bumps",
     }
 
 
@@ -162,3 +165,92 @@ def test_lerp_hits_both_ends() -> None:
     assert lerp(0.85, 0.3, 0.0) == 0.85
     assert lerp(0.85, 0.3, 1.0) == pytest.approx(0.3)
     assert lerp(0.0, 1.0, 0.25) == 0.25
+
+
+# ------------------------------------------------------------------- texture
+
+
+def test_fields_layers_and_bumps_reject_bad_values() -> None:
+    from jingyu.materials.recipe import Bump, Field, Layer
+
+    with pytest.raises(ValueError, match="kind"):
+        Field("plaid")
+    with pytest.raises(ValueError, match="axis"):
+        Field("rings", axis="w")
+    with pytest.raises(ValueError, match="differ"):
+        Field("noise", low=0.5, high=0.5)
+    with pytest.raises(ValueError, match="mask"):
+        Layer(())
+    with pytest.raises(ValueError, match="amount"):
+        Layer((Field("noise"),), amount=1.5)
+    with pytest.raises(ValueError, match="bump"):
+        Bump(Field("noise"), distance=0.0)
+
+
+@pytest.mark.parametrize(
+    ("family", "params"),
+    [
+        ("wood", {}),
+        ("stone", {"kind": "marble"}),
+        ("stone", {"kind": "granite"}),
+        ("stone", {"kind": "concrete"}),
+        ("fabric", {}),
+        ("peel", {}),
+        ("ceramic", {"speckle": 0.5, "texture": 0.5}),
+        ("plastic", {"texture": 0.5}),
+        ("metal", {"metal": "copper", "tarnish": 0.6, "brushed": 0.5}),
+        ("metal", {"metal": "iron", "tarnish": 0.8}),
+    ],
+)
+def test_textured_families_paint_layers(family: str, params: dict[str, Any]) -> None:
+    recipe = _recipe(family, **params)
+    assert recipe.textured
+    _assert_in_range(recipe)
+
+
+def test_texture_knobs_at_zero_give_plain_surfaces() -> None:
+    assert not _recipe("ceramic").textured
+    assert not _recipe("plastic").textured
+    assert not _recipe("metal").textured
+    assert not _recipe("peel", dimples=0.0, blush=0.0).bumps
+
+
+def test_rust_takes_the_colour_and_matte_of_oxide() -> None:
+    rust = _recipe("metal", metal="iron", tarnish=0.8)
+    oxide = rust.layers[0]
+    assert oxide.metallic == 0.0 and oxide.roughness == pytest.approx(0.9)
+    assert oxide.color is not None and oxide.color[0] > 2 * oxide.color[2]
+    copper = _recipe("metal", metal="copper", tarnish=0.8)
+    assert any(layer.metallic == 0.0 for layer in copper.layers)  # verdigris in the creases
+
+
+def test_weathering_adds_one_effect_per_knob() -> None:
+    from jingyu.materials.weathering import material_recipe, weather
+
+    plain = _recipe("plastic")
+    assert weather(plain, None) is plain
+    assert weather(plain, {"dust": 0.0}).layers == ()
+    worn = weather(plain, {"wear": 0.5, "wear_color": "#b08a5e"})
+    assert [f.kind for f in worn.layers[0].mask] == ["edges", "noise"]
+    assert worn.layers[0].color == pytest.approx(srgb_hex_to_linear("#b08a5e"))
+    dusty = weather(plain, {"dust": 0.5})
+    assert dusty.layers[0].mask[0].kind == "facing_up" and dusty.bumps
+    grimy = weather(plain, {"grime": 0.5})
+    assert {layer.mask[0].kind for layer in grimy.layers} == {"cavity", "low"}
+    assert weather(plain, {"stains": 0.5}).layers[0].mask[0].kind == "cracks"
+    assert weather(plain, {"fingerprints": 0.5}).layers[0].color is None
+    entry = {"id": "paint", "family": "plastic", "weathering": {"dust": 0.3, "seed": 2}}
+    assert material_recipe(entry).layers == weather(plain, {"dust": 0.3, "seed": 2}).layers
+    assert material_recipe(entry).layers != weather(plain, {"dust": 0.3, "seed": 3}).layers
+
+
+def test_weathering_is_validated_on_the_material_entry() -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["materials"][0]["weathering"] = {"dust": 0.2, "wear": 0.1}
+    result = validate_scene(scene)
+    assert result.valid
+    assert result.normalized["materials"][0]["weathering"]["grime"] == 0.0
+    scene["materials"][0]["weathering"] = {"rust": 0.5}
+    assert not validate_scene(scene).valid

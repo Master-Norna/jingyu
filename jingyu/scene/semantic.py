@@ -214,7 +214,7 @@ def _check_generators(scene: Mapping[str, Any]) -> list[Issue]:
             )
     for index, material in enumerate(scene["materials"]):
         family = MATERIALS.get(material["family"])
-        params = {k: v for k, v in material.items() if k not in ("family", "id")}
+        params = {k: v for k, v in material.items() if k not in ("family", "id", "weathering")}
         for param, message in family.check(params):
             issues.append(
                 Issue(

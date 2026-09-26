@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from mathutils import Vector
+
 from ..canonical_json import canonical_bytes
 from ..conventions import kelvin_to_linear, srgb_hex_to_linear, sun_rotation_deg
 from ..environments import ENVIRONMENTS, EnvironmentRecipe
@@ -13,6 +15,7 @@ from ..errors import JingyuError, pointer_join
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
 from ..materials.assign import PartMaterial, part_materials
+from ..materials.weathering import material_recipe
 from ..placement import aim_matrix, resolve_placement
 from . import compat, kit
 
@@ -47,6 +50,9 @@ class BuildResult:
     #: Names of Blender materials that transmit light (glass).
     transmissive_materials: set[str] = field(default_factory=set)
     warnings: list[dict[str, str]] = field(default_factory=list)
+    #: The box of scattering air, when the environment has mist; hidden from the
+    #: diagnostic passes, which look at surfaces.
+    air: Any = None
 
     @property
     def visible(self) -> list[BuiltObject]:
@@ -101,9 +107,8 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
     materials: dict[str, Any] = {}
     refractive_materials: list[Any] = []
     for index, entry in enumerate(spec["materials"]):
-        params = {k: v for k, v in entry.items() if k != "id"}
         try:
-            recipe = MATERIALS.run(params)
+            recipe = material_recipe(entry)
         except (KeyError, ValueError) as exc:
             raise _build_error(pointer_join("materials", index), exc) from exc
         material = kit.principled_material(entry["id"], recipe)
@@ -189,11 +194,32 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
         cameras[entry["id"]] = camera
     scene.camera = cameras[spec["render"]["camera"]]
 
+    if environment.air is not None:
+        result.air = _fill_air(scene, environment.air, result, scene.camera)
+
     if refractive_materials:
         result.refractive = True
         for material in refractive_materials:
             compat.enable_eevee_refraction(scene, material)
     return result
+
+
+def _fill_air(scene: Any, air: Any, result: BuildResult, camera: Any) -> Any:
+    """Fill the space around everything visible, and the camera, with air."""
+
+    points = [camera.matrix_world.translation]
+    for built in result.visible:
+        obj = built.blender_object
+        points += [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+    low = [min(p[k] for p in points) for k in range(3)]
+    high = [max(p[k] for p in points) for k in range(3)]
+    margin = [0.05 * (h - lo) + 0.25 for lo, h in zip(low, high, strict=True)]
+    return kit.new_air(
+        scene,
+        air,
+        (low[0] - margin[0], low[1] - margin[1], low[2] - margin[2]),
+        (high[0] + margin[0], high[1] + margin[1], high[2] + margin[2]),
+    )
 
 
 def configure_render(

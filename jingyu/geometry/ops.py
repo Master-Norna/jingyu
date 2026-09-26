@@ -239,7 +239,39 @@ def _vessel(p: Mapping[str, Any]) -> MeshData:
         polyline = shell(profile, float(p["thickness"]))
     else:
         polyline = close_solid(profile)
-    return revolve(polyline, int(p["segments"]), float(p["sharp_angle"]))
+    mesh = revolve(polyline, int(p["segments"]), float(p["sharp_angle"]))
+    wobble = float(p["wobble"])
+    return _hand_made(mesh, wobble, float(p["height"]), int(p["seed"])) if wobble > 0 else mesh
+
+
+def _hand_made(mesh: MeshData, wobble: float, height: float, seed: int) -> MeshData:
+    """The small irregularity of a thrown pot: slightly out of round, gently leaning.
+
+    Every point moves by a smooth function of its angle and height only, so the
+    inner and outer walls move together, the wall keeps its thickness and the
+    foot stays flat on the ground.
+    """
+
+    golden = 2.399963229728653
+    phases = [(seed * golden * (k + 1) + k * 1.618) % math.tau for k in range(4)]
+    lean = 0.04 * wobble * height
+    moved = []
+    for x, y, z in mesh.vertices:
+        h = z / height
+        angle = math.atan2(y, x)
+        round_ = 1.0 + 0.035 * wobble * (
+            0.6 * math.sin(2.0 * angle + phases[0] + 2.5 * h)
+            + 0.4 * math.sin(3.0 * angle + phases[1] - 1.7 * h)
+        )
+        shift = lean * h * h
+        moved.append(
+            (
+                x * round_ + shift * math.cos(phases[2]),
+                y * round_ + shift * math.sin(phases[2]),
+                z,
+            )
+        )
+    return MeshData(tuple(moved), mesh.faces, mesh.smooth, mesh.sharp_edges)
 
 
 def _vessel_check(p: Mapping[str, Any]) -> list[ParamProblem]:
@@ -295,6 +327,19 @@ VESSEL = GeneratorDef[MeshData](
             "Number of points sampled along the wall.", default=64, minimum=4, maximum=1024
         ),
         "sharp_angle": _SHARP,
+        "wobble": number(
+            "Hand-made irregularity: 0 machine-perfect, 0.3 thrown on a wheel (slightly out "
+            "of round, gently leaning), 1 rustic.",
+            default=0.0,
+            minimum=0.0,
+            maximum=1.0,
+        ),
+        "seed": integer(
+            "Variation of the irregularity: another number, another pot.",
+            default=0,
+            minimum=0,
+            maximum=100000,
+        ),
     },
     run=_vessel,
     check=_vessel_check,
@@ -319,6 +364,7 @@ VESSEL = GeneratorDef[MeshData](
             "neck_at": 0.8,
             "lip_radius": 0.013,
         },
+        {"op": "vessel", "height": 0.2, "belly_radius": 0.07, "wobble": 0.4, "seed": 7},
     ),
 )
 

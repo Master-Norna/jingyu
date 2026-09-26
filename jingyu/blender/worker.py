@@ -99,6 +99,9 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
     timings["render_ms"] = _ms_since(mark)
 
     outputs = {"image": image.name}
+    if built.air is not None:  # the passes look at surfaces, not at the air
+        built.air.hide_render = True
+        built.air.hide_viewport = True
     light_map: dict[str, Any] | None = None
     if want_light:
         mark = time.perf_counter()

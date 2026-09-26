@@ -547,6 +547,20 @@
                 "minimum": 0.0,
                 "maximum": 180.0,
                 "default": 30.0
+              },
+              "wobble": {
+                "type": "number",
+                "description": "Hand-made irregularity: 0 machine-perfect, 0.3 thrown on a wheel (slightly out of round, gently leaning), 1 rustic.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation of the irregularity: another number, another pot.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
               }
             }
           }
@@ -1009,6 +1023,10 @@
             "glass",
             "metal",
             "plastic",
+            "wood",
+            "stone",
+            "fabric",
+            "peel",
             "principled"
           ],
           "description": "Which material family to use."
@@ -1053,10 +1071,85 @@
                 "maximum": 1.0,
                 "default": 0.8
               },
+              "speckle": {
+                "type": "number",
+                "description": "Dark iron specks of stoneware clay showing through the glaze, 0 none to 1 many.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "texture": {
+                "type": "number",
+                "description": "Grain and mottling of the clay body, 0 smooth to 1 coarse; strongest on unglazed (low gloss) pieces.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,62}$",
                 "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
               }
             }
           }
@@ -1115,6 +1208,60 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,62}$",
                 "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
               }
             }
           }
@@ -1133,7 +1280,7 @@
           "then": {
             "type": "object",
             "title": "metal",
-            "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished.",
+            "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished, clean or tarnished with age (iron rusts).",
             "additionalProperties": false,
             "required": [
               "id",
@@ -1142,7 +1289,7 @@
             "properties": {
               "family": {
                 "const": "metal",
-                "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished."
+                "description": "Conductive metal with measured reflectance, from brushed-dull to mirror-polished, clean or tarnished with age (iron rusts)."
               },
               "metal": {
                 "type": "string",
@@ -1167,10 +1314,85 @@
                 "maximum": 1.0,
                 "default": 0.8
               },
+              "brushed": {
+                "type": "number",
+                "description": "Fine parallel brush marks along x, 0 none to 1 strong.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "tarnish": {
+                "type": "number",
+                "description": "Age: 0 freshly cleaned; 0.3 a lived-in patina (clean copper looks pink, real copper is rarely clean); 1 heavily tarnished, or rusted for iron.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,62}$",
                 "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
               }
             }
           }
@@ -1213,10 +1435,588 @@
                 "maximum": 1.0,
                 "default": 0.3
               },
+              "texture": {
+                "type": "number",
+                "description": "Surface relief and slight colour unevenness: 0 flawless moulded plastic, 0.3 painted wall, 1 rough plaster or stucco.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
               "id": {
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,62}$",
                 "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "wood"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "wood",
+            "description": "Wood with growth-ring grain running along an axis, raw and matte to lacquered. Oak, walnut, pine and birch are colours, ring spacing and figure.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "wood",
+                "description": "Wood with growth-ring grain running along an axis, raw and matte to lacquered. Oak, walnut, pine and birch are colours, ring spacing and figure."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the light early wood. sRGB hex #rrggbb.",
+                "default": "#b58658"
+              },
+              "grain_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the darker late-wood rings. sRGB hex #rrggbb.",
+                "default": "#7a5230"
+              },
+              "ring_size": {
+                "type": "number",
+                "description": "Distance between growth rings in metres (pine ~0.006, oak ~0.003).",
+                "exclusiveMinimum": 0,
+                "default": 0.005
+              },
+              "figure": {
+                "type": "number",
+                "description": "How wavy the grain is: 0 straight, 1 wild burl-like.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "grain_axis": {
+                "enum": [
+                  "x",
+                  "y",
+                  "z"
+                ],
+                "default": "x",
+                "description": "The axis the grain runs along, in the object's own axes: the length of a board (x for a table top, z for a table leg)."
+              },
+              "pores": {
+                "type": "number",
+                "description": "Open pores along the grain (oak, ash), 0 closed to 1 coarse.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.4
+              },
+              "finish": {
+                "type": "number",
+                "description": "0 raw or oiled and matte, 1 lacquered and glossy.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "stone"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "stone",
+            "description": "Stone: veined marble, speckled granite or poured concrete, rough to polished.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "stone",
+                "description": "Stone: veined marble, speckled granite or poured concrete, rough to polished."
+              },
+              "kind": {
+                "enum": [
+                  "marble",
+                  "granite",
+                  "concrete"
+                ],
+                "default": "marble",
+                "description": "marble: soft clouds crossed by thin veins; granite: a dense speckle of mineral grains; concrete: soft clouds and small pits."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "The main colour. sRGB hex #rrggbb.",
+                "default": "#e9e6e0"
+              },
+              "accent_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Veins (marble), dark grains (granite) or shading (concrete). sRGB hex #rrggbb.",
+                "default": "#8f8a86"
+              },
+              "polish": {
+                "type": "number",
+                "description": "0 honed or raw, 1 polished to a mirror.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.5
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "fabric"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "fabric",
+            "description": "Woven cloth: linen, cotton, wool; a visible weave and a soft sheen.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "fabric",
+                "description": "Woven cloth: linen, cotton, wool; a visible weave and a soft sheen."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Cloth colour. sRGB hex #rrggbb.",
+                "default": "#c9bfae"
+              },
+              "thread_size": {
+                "type": "number",
+                "description": "Thread spacing in metres (fine cotton ~0.0005, linen ~0.001, burlap ~0.004).",
+                "exclusiveMinimum": 0,
+                "default": 0.001
+              },
+              "fuzz": {
+                "type": "number",
+                "description": "Soft sheen of loose fibres at grazing angles (velvet, wool).",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "family": {
+                "const": "peel"
+              }
+            },
+            "required": [
+              "family"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "title": "peel",
+            "description": "Fruit and vegetable skin: an orange's dimpled peel, an apple's waxy skin with a blush, a lemon, a tomato.",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "family"
+            ],
+            "properties": {
+              "family": {
+                "const": "peel",
+                "description": "Fruit and vegetable skin: an orange's dimpled peel, an apple's waxy skin with a blush, a lemon, a tomato."
+              },
+              "color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Skin colour. sRGB hex #rrggbb.",
+                "default": "#e5731b"
+              },
+              "blush_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of patches and blush (an apple's red cheek). sRGB hex #rrggbb.",
+                "default": "#c9561a"
+              },
+              "blush": {
+                "type": "number",
+                "description": "How much of the skin carries the blush colour in patches.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.3
+              },
+              "dimples": {
+                "type": "number",
+                "description": "Depth of the pores: 1 an orange, 0.3 a lemon, 0 an apple.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.8
+              },
+              "dimple_size": {
+                "type": "number",
+                "description": "Spacing of the pores in metres.",
+                "exclusiveMinimum": 0,
+                "default": 0.0015
+              },
+              "gloss": {
+                "type": "number",
+                "description": "0 dull, 1 waxy and shiny.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.5
+              },
+              "seed": {
+                "type": "integer",
+                "description": "Variation: another number gives another pattern of the same kind.",
+                "minimum": 0,
+                "maximum": 100000,
+                "default": 0
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,62}$",
+                "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
               }
             }
           }
@@ -1317,6 +2117,60 @@
                 "type": "string",
                 "pattern": "^[a-z][a-z0-9_-]{0,62}$",
                 "description": "Lowercase ASCII slug."
+              },
+              "weathering": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Time on the surface, for any material; every effect follows the object's shape. 0 is factory-new. A little (0.1-0.3) is what makes a render read as a photograph.",
+                "properties": {
+                  "wear": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Rubbed convex edges and corners: paint and glaze worn thin, gloss dulled."
+                  },
+                  "wear_color": {
+                    "type": "string",
+                    "pattern": "^#[0-9a-fA-F]{6}$",
+                    "description": "What shows where it is worn through (bare wood under paint, clay under glaze), sRGB hex; omitted: a paler, duller version of the surface."
+                  },
+                  "dust": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Matte grey dust settled on the surfaces facing up."
+                  },
+                  "grime": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dark dirt in creases, inside corners and near the base."
+                  },
+                  "stains": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Dried water marks: pale rings of mineral deposit."
+                  },
+                  "fingerprints": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "default": 0.0,
+                    "description": "Smudges that dull a glossy surface in patches."
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100000,
+                    "default": 0,
+                    "description": "Variation: another number places the marks differently."
+                  }
+                }
               }
             }
           }
@@ -2243,6 +3097,26 @@
                 "description": "Brightness multiplier.",
                 "minimum": 0.0,
                 "default": 1.0
+              },
+              "mist": {
+                "type": "number",
+                "description": "Dust or mist in the air, 0 clear to 1 thick fog. 0.1-0.3 indoors shows sunbeams through a window as shafts and softens the far wall; outdoors it hazes the distance.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "mist_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the particles in the air (sRGB hex): white mist, warm dust.",
+                "default": "#ffffff"
+              },
+              "mist_glow": {
+                "type": "number",
+                "description": "How much the air glows looking toward the light, 0 evenly to 0.9 a bright halo with crisp shafts.",
+                "minimum": 0.0,
+                "maximum": 0.9,
+                "default": 0.4
               }
             }
           }
@@ -2332,6 +3206,26 @@
                 "minimum": 0.0,
                 "maximum": 100.0,
                 "default": 1.0
+              },
+              "mist": {
+                "type": "number",
+                "description": "Dust or mist in the air, 0 clear to 1 thick fog. 0.1-0.3 indoors shows sunbeams through a window as shafts and softens the far wall; outdoors it hazes the distance.",
+                "minimum": 0.0,
+                "maximum": 1.0,
+                "default": 0.0
+              },
+              "mist_color": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$",
+                "description": "Colour of the particles in the air (sRGB hex): white mist, warm dust.",
+                "default": "#ffffff"
+              },
+              "mist_glow": {
+                "type": "number",
+                "description": "How much the air glows looking toward the light, 0 evenly to 0.9 a bright halo with crisp shafts.",
+                "minimum": 0.0,
+                "maximum": 0.9,
+                "default": 0.4
               }
             }
           }

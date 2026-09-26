@@ -38,7 +38,13 @@ PRINCIPLED_INPUTS: dict[str, tuple[str, ...]] = {
     "coat_roughness": ("Coat Roughness", "Clearcoat Roughness"),
     "emission_color": ("Emission Color", "Emission"),
     "emission_strength": ("Emission Strength",),
+    "sheen_weight": ("Sheen Weight", "Sheen"),
+    "normal": ("Normal",),
+    "coat_normal": ("Coat Normal", "Clearcoat Normal"),
 }
+
+#: Socket identifiers of the Mix node's typed sockets.
+_MIX_TYPES = {"FLOAT": "Float", "RGBA": "Color", "VECTOR": "Vector"}
 
 GPU_BACKENDS: tuple[str, ...] = ("OPTIX", "CUDA", "HIP", "METAL", "ONEAPI")
 
@@ -132,6 +138,39 @@ def set_principled_input(node: Any, key: str, value: Any) -> None:
     )
 
 
+def principled_socket(node: Any, key: str, *, required: bool = True) -> Any:
+    """The principled BSDF input for a jingyu channel name, whatever this version calls it."""
+
+    for name in PRINCIPLED_INPUTS[key]:
+        socket = node.inputs.get(name)
+        if socket is not None:
+            return socket
+    if not required:
+        return None
+    raise JingyuError(
+        "blender.build_failed",
+        f"principled BSDF has no input for {key!r} in Blender {bpy.app.version_string}",
+    )
+
+
+def mix_socket(node: Any, name: str, data_type: str) -> Any:
+    """An input of a Mix node by role (Factor, A, B) and data type."""
+
+    identifier = f"{name}_{_MIX_TYPES[data_type]}"
+    for socket in node.inputs:
+        if socket.identifier == identifier:
+            return socket
+    raise JingyuError("blender.build_failed", f"the Mix node has no input {identifier!r}")
+
+
+def mix_output(node: Any, data_type: str) -> Any:
+    identifier = f"Result_{_MIX_TYPES[data_type]}"
+    for socket in node.outputs:
+        if socket.identifier == identifier:
+            return socket
+    raise JingyuError("blender.build_failed", f"the Mix node has no output {identifier!r}")
+
+
 def enable_eevee_refraction(scene: Any, material: Any) -> None:
     """Let EEVEE render refraction through *material* (a no-op where unsupported)."""
 
@@ -198,6 +237,9 @@ __all__ = [
     "enable_eevee_refraction",
     "enable_transparency",
     "ensure_node_tree",
+    "mix_output",
+    "mix_socket",
+    "principled_socket",
     "refresh_cycles_devices",
     "require_supported_version",
     "set_engine",

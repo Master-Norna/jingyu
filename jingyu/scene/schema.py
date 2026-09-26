@@ -17,6 +17,7 @@ from ..environments import ENVIRONMENTS
 from ..generator import discriminated_union
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
+from ..materials.weathering import WEATHERING_SCHEMA
 from .warnings import ACCEPTABLE_WARNINGS
 
 SCENE_SCHEMA = "jingyu.scene.v1"
@@ -469,7 +470,8 @@ def _cached_schema() -> dict[str, Any]:
             "color": _COLOR,
             "geometry": GEOMETRY.union_schema(),
             "material": MATERIALS.union_schema(
-                extra_properties={"id": _ID}, extra_required=("id",)
+                extra_properties={"id": _ID, "weathering": WEATHERING_SCHEMA},
+                extra_required=("id",),
             ),
             "group": _group_schema(),
             "object": _object_schema(),
