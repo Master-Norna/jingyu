@@ -14,9 +14,18 @@ from PIL import Image
 
 from jingyu import doctor
 from jingyu.bridge import BlenderRuntime, discover_runtime, run_worker
-from jingyu.candidate import ID_MAP_NAME, ID_MASK_NAME, IMAGE_NAME, SCENE_NAME, CandidateStore
+from jingyu.candidate import (
+    ID_MAP_NAME,
+    ID_MASK_NAME,
+    IMAGE_NAME,
+    LIGHT_MAP_NAME,
+    LIGHT_MASK_NAME,
+    SCENE_NAME,
+    CandidateStore,
+)
 from jingyu.canonical_json import load_file_strict
 from jingyu.errors import JingyuError
+from jingyu.lighting import LightMap
 from jingyu.locate import IdMask
 from jingyu.render import RenderOutcome, render_scene
 from jingyu.scene import minimal_scene
@@ -89,6 +98,8 @@ def test_render_commits_a_verified_candidate(
         IMAGE_NAME,
         ID_MASK_NAME,
         ID_MAP_NAME,
+        LIGHT_MASK_NAME,
+        LIGHT_MAP_NAME,
         SCENE_NAME,
         "blender.log",
     }
@@ -208,3 +219,22 @@ def test_daylight_groups_and_rest_on_render(runtime: BlenderRuntime, tmp_path: P
     assert layout["not_in_frame"] == []
     assert {o["object"] for o in layout["objects"]} >= {"top", "bowl", "orange"}
     assert "frame.underexposed" not in {w.code for w in outcome.warnings}
+    lights = LightMap.load(candidate)
+    assert [light["id"] for light in lights.lights] == ["environment.sun", "window"]
+    assert set(lights.document["in_view"]) >= {"top", "bowl", "orange"}
+    # Nothing above the table: the camera sees open sky upward.
+    assert lights.document["openness"]["open_upward_fraction"] > 0.9
+    # The orange sits in the bowl and the window light reaches most of what is seen of it.
+    assert lights.document["objects"]["orange"]["lit_fraction"]["window"] > 0.3
+
+
+def test_light_pass_finds_shadows(rendered: RenderOutcome) -> None:
+    lights = LightMap.load(rendered.candidate)
+    (key,) = lights.lights
+    with Image.open(rendered.candidate.file(LIGHT_MASK_NAME)) as mask:
+        assert max(mask.size) == 240
+    assert set(lights.document["in_view"]) == {"floor", "vase"}
+    shadows = {(s["caster"], s["receiver"]) for s in lights.document["shadows"]}
+    assert ("vase", "floor") in shadows
+    # The vase's side toward the lamp is lit; the floor far behind it is not all lit.
+    assert 0.0 < lights.document["objects"]["floor"]["lit_fraction"][key["id"]] < 1.0

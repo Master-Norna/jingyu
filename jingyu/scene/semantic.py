@@ -125,6 +125,16 @@ def _check_hierarchy(scene: Mapping[str, Any]) -> list[Issue]:
             parent = groups[parent].get("parent")
     objects = set(_ids(scene, "objects"))
     for index, obj in enumerate(scene["objects"]):
+        for position, other in enumerate(obj.get("attached_to", [])):
+            if other == obj["id"] or other not in objects:
+                issues.append(
+                    Issue(
+                        "spec.unknown_reference",
+                        f"attached_to {other!r} is not another object",
+                        pointer_join("objects", index, "attached_to", position),
+                        hint=f"defined objects: {sorted(objects)}",
+                    )
+                )
         support = obj.get("rest_on")
         if support is None:
             continue

@@ -17,6 +17,7 @@ from ..environments import ENVIRONMENTS
 from ..generator import discriminated_union
 from ..geometry import GEOMETRY
 from ..materials import MATERIALS
+from .warnings import ACCEPTABLE_WARNINGS
 
 SCENE_SCHEMA = "jingyu.scene.v1"
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
@@ -198,6 +199,26 @@ def _object_schema() -> dict[str, Any]:
                 "id", description="Id of an entry in materials; omitted means neutral grey."
             ),
             "parent": copy.deepcopy(_PARENT),
+            "accept_warnings": {
+                "type": "array",
+                "uniqueItems": True,
+                "items": {"enum": list(ACCEPTABLE_WARNINGS)},
+                "description": (
+                    "Warning codes that are intended for this object only, e.g. "
+                    "frame.not_visible for a wall or ceiling that closes the room out of "
+                    "sight."
+                ),
+            },
+            "attached_to": {
+                "type": "array",
+                "uniqueItems": True,
+                "items": _ref("id"),
+                "description": (
+                    "Ids of objects this one is fixed to on purpose: walls meeting at a "
+                    "corner, a lamp hanging from a ceiling, a nail in a wall. Sinking into "
+                    "them and hovering are then not reported."
+                ),
+            },
             "rest_on": _ref(
                 "id",
                 description=(
@@ -337,6 +358,17 @@ def _cached_schema() -> dict[str, Any]:
                 "type": "string",
                 "maxLength": 8000,
                 "description": "Free-form context; never affects rendering.",
+            },
+            "accept_warnings": {
+                "type": "array",
+                "uniqueItems": True,
+                "default": [],
+                "items": {"enum": list(ACCEPTABLE_WARNINGS)},
+                "description": (
+                    "Warning codes that describe the picture as intended, e.g. "
+                    "frame.underexposed for a deliberately dark image; they are no longer "
+                    "reported. Prefer fixing the scene."
+                ),
             },
             "world": {
                 "type": "object",

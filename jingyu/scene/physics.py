@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..errors import Issue, pointer_join
-from ..geometry.spatial import WorldMesh, drop_gap, overlaps
+from ..geometry.spatial import WorldMesh, drop_gap, overlaps, rest_shift
 from ..placement import Placement
 
 #: Sinking deeper than this is reported.
@@ -36,6 +36,8 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
         for b_index, b in visible[position + 1 :]:
             if not overlaps(bounds[a["id"]], bounds[b["id"]], INTERSECTION_TOLERANCE):
                 continue
+            if _attached(a, b):
+                continue
             forward = _sinking(meshes[a["id"]], meshes[b["id"]], bounds[b["id"]])
             backward = _sinking(meshes[b["id"]], meshes[a["id"]], bounds[a["id"]])
             if max(forward[0], backward[0]) <= INTERSECTION_TOLERANCE:
@@ -57,14 +59,14 @@ def check_physics(scene: Mapping[str, Any], placement: Placement) -> list[Issue]
                     f"({count} of its points are inside)",
                     pointer_join("objects", sinker_index, "location"),
                     severity="warning",
-                    hint=_intersection_hint(sinker, host),
+                    hint=_intersection_hint(sinker, host, meshes),
                 )
             )
 
     lowest = min((box[0][2] for box in bounds.values()), default=0.0)
     for index, obj in visible:
         obj_id = obj["id"]
-        if obj_id in sunk:
+        if obj_id in sunk or obj.get("attached_to"):
             continue
         box = bounds[obj_id]
         gap: float | None = None
@@ -130,10 +132,20 @@ def _footprints_overlap(
     return all(a[0][k] <= b[1][k] and b[0][k] <= a[1][k] for k in range(2))
 
 
-def _intersection_hint(a: Mapping[str, Any], b: Mapping[str, Any]) -> str:
+def _attached(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    return b["id"] in a.get("attached_to", ()) or a["id"] in b.get("attached_to", ())
+
+
+def _intersection_hint(
+    a: Mapping[str, Any], b: Mapping[str, Any], meshes: Mapping[str, WorldMesh]
+) -> str:
     if a.get("rest_on") == b["id"]:
         return f"{a['id']!r} rests on {b['id']!r} but also sinks into it; move it in x or y"
-    return f'move one of them, or set "rest_on": "{b["id"]}" to seat {a["id"]!r} on it'
+    joined = f'if they are joined on purpose, add "attached_to": ["{b["id"]}"] to {a["id"]!r}'
+    low_a, low_b = meshes[a["id"]].bounds()[0][2], meshes[b["id"]].bounds()[0][2]
+    if low_a > low_b and rest_shift(meshes[a["id"]], meshes[b["id"]]) is not None:
+        return f'set "rest_on": "{b["id"]}" to seat {a["id"]!r} on it; {joined}'
+    return f"move them apart; {joined}"
 
 
 __all__ = ["FLOATING_TOLERANCE", "INTERSECTION_TOLERANCE", "check_physics"]

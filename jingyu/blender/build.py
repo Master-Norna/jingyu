@@ -17,6 +17,8 @@ from . import compat, kit
 DEFAULT_MATERIAL_NAME = "__jingyu_default__"
 DEFAULT_MATERIAL_COLOR = "#bfbfbf"
 SUN_NAME = "__jingyu_sun__"
+#: How the environment's sun is named in diagnostics (never a valid scene id).
+ENVIRONMENT_SUN_ID = "environment.sun"
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,11 @@ class BuildResult:
     objects: list[BuiltObject] = field(default_factory=list)
     refractive: bool = False
     sky_model: str | None = None
+    #: (light id, kind, Blender object) for every light, the environment's sun included.
+    lights: list[tuple[str, str, Any]] = field(default_factory=list)
+    #: Ids of objects whose material transmits light (glass).
+    transmissive: set[str] = field(default_factory=set)
+    transmissive_materials: set[str] = field(default_factory=set)
     warnings: list[dict[str, str]] = field(default_factory=list)
 
     @property
@@ -60,6 +67,7 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
             scene, SUN_NAME, "sun", sun.color, strength=sun.strength, angle=sun.angle
         )
         kit.aim(lamp, (0.0, 0.0, 0.0), None, sun_rotation_deg(sun.elevation, sun.azimuth))
+        result.lights.append((ENVIRONMENT_SUN_ID, "sun", lamp))
 
     try:
         placement = resolve_placement(spec, build_meshes=False)
@@ -85,6 +93,7 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
         materials[entry["id"]] = material
         if recipe.refractive:
             refractive_materials.append(material)
+            result.transmissive_materials.add(entry["id"])
 
     default_material: Any = None
     for index, entry in enumerate(spec["objects"]):
@@ -107,6 +116,8 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
             material = default_material
         kit.assign_material(obj, material)
         obj.hide_render = not entry["visible"]
+        if material_id in result.transmissive_materials:
+            result.transmissive.add(entry["id"])
         result.objects.append(BuiltObject(entry["id"], pointer, material_id, obj))
 
     for entry in spec["lights"]:
@@ -131,6 +142,7 @@ def build_scene(scene: Any, spec: Mapping[str, Any]) -> BuildResult:
             else srgb_hex_to_linear(entry["color"])
         )
         light = kit.new_light(scene, entry["id"], entry["kind"], color, **params)
+        result.lights.append((entry["id"], entry["kind"], light))
         kit.aim(
             light,
             entry["location"],

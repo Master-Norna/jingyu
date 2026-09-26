@@ -211,6 +211,6 @@ def test_the_worker_receives_a_normalised_request(workspace: Workspace, tmp_path
     request = json.loads(capture.read_text(encoding="utf-8"))
     assert request["protocol"] == "jingyu.worker.v1"
     assert request["action"] == "render"
-    assert request["passes"] == {"id_mask": True}
+    assert request["passes"] == {"id_mask": True, "light": True}
     assert request["overrides"] == {"resolution": [480, 360], "samples": 16}
     assert request["scene"]["objects"][1]["geometry"]["segments"] == 96

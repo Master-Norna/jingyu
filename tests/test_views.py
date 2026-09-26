@@ -32,6 +32,8 @@ EXPECTED_SIZES = {
     "grayscale": (WIDTH, HEIGHT),
     "values": (WIDTH, HEIGHT),
     "id_mask": (WIDTH, HEIGHT),
+    "saturation": (WIDTH, HEIGHT),
+    "light": (WIDTH, HEIGHT),
     # Both sides at the smaller height plus a 4 px gap.
     "compare": (WIDTH + 4 + WIDTH, HEIGHT),
 }

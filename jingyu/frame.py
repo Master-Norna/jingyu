@@ -26,35 +26,87 @@ TARGET_MEAN_LUMA = 0.42
 MAX_CLIPPED_FRACTION = 0.05
 
 
+#: A room is "open" when more than this share of upward directions from the
+#: camera reach the sky.
+OPEN_UPWARD_FRACTION = 0.25
+
+
 def check_frame(
     image_path: Path,
     id_mask_path: Path | None,
     id_map: Mapping[str, Any] | None,
     scene: Mapping[str, Any],
+    light_map: Mapping[str, Any] | None = None,
 ) -> list[Issue]:
     issues: list[Issue] = []
     if id_mask_path is not None and id_map is not None:
-        issues += _not_visible(id_mask_path, id_map, scene)
+        issues += _not_visible(id_mask_path, id_map, scene, light_map)
     issues += _exposure(image_path, scene)
+    if light_map is not None:
+        issues += _open_to_sky(scene, light_map)
     return issues
 
 
 def _not_visible(
-    id_mask_path: Path, id_map: Mapping[str, Any], scene: Mapping[str, Any]
+    id_mask_path: Path,
+    id_map: Mapping[str, Any],
+    scene: Mapping[str, Any],
+    light_map: Mapping[str, Any] | None,
 ) -> list[Issue]:
+    """Objects in the camera's view that cover no pixel: hidden behind something.
+
+    Objects outside the view are usually deliberate (a ceiling, a bounce card) and
+    are only listed by describe_layout.  Without a light pass there is no view
+    test, so every missing object is reported.
+    """
+
     with Image.open(id_mask_path) as image:
         mask = IdMask(image.convert("RGBA"), id_map, scene)
     missing = set(mask.layout()["not_in_frame"])
+    in_view = None if light_map is None else set(light_map.get("in_view", []))
     return [
         Issue(
             "frame.not_visible",
-            f"{obj['id']!r} is visible but covers no pixel of the frame",
+            f"{obj['id']!r} is in the camera's view but covers no pixel"
+            if in_view is not None
+            else f"{obj['id']!r} is visible but covers no pixel of the frame",
             pointer_join("objects", index),
             severity="warning",
-            hint="it is outside the camera's view or hidden behind another object",
+            hint="another object hides it completely; if it is only there to shape the light "
+            '(a wall or ceiling closing the room), add "accept_warnings": '
+            '["frame.not_visible"] to it'
+            if in_view is not None
+            else "it is outside the camera's view or hidden behind another object",
         )
         for index, obj in enumerate(scene["objects"])
-        if obj["id"] in missing
+        if obj["id"] in missing and (in_view is None or obj["id"] in in_view)
+    ]
+
+
+def _open_to_sky(scene: Mapping[str, Any], light_map: Mapping[str, Any]) -> list[Issue]:
+    """A room with windows whose surroundings still let the sky in from above."""
+
+    environment = scene["world"].get("environment")
+    if environment is None or environment.get("family") != "daylight":
+        return []
+    has_openings = any(
+        o["visible"] and o["geometry"]["op"] == "wall" and o["geometry"].get("openings")
+        for o in scene["objects"]
+    )
+    openness = light_map.get("openness", {})
+    upward = float(openness.get("open_upward_fraction", 0.0))
+    if not has_openings or upward <= OPEN_UPWARD_FRACTION:
+        return []
+    return [
+        Issue(
+            "light.open_to_sky",
+            f"the scene has walls with windows, but {upward:.0%} of the directions above "
+            "the camera reach the open sky: skylight floods in everywhere, not only through "
+            "the windows (cool walls, sky reflected in glossy things)",
+            "/objects",
+            severity="warning",
+            hint="close the room with walls and a ceiling; they may stay out of frame",
+        )
     ]
 
 

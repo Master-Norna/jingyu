@@ -42,6 +42,8 @@ ERROR_CODES: dict[str, str] = {
     "frame.not_visible": "Warning: a visible object does not appear in the rendered frame.",
     "frame.underexposed": "Warning: the rendered frame is dark overall.",
     "frame.overexposed": "Warning: a large part of the rendered frame is pure white.",
+    "light.open_to_sky": "Warning: a room with windows is open to the sky around the camera.",
+    "light.unknown_light": "The light pass has no light with this id.",
     # Generators
     "geometry.unknown_op": "The geometry operator is not registered.",
     "geometry.invalid_profile": "A lathe profile cannot be revolved into a valid solid.",

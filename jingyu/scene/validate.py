@@ -19,6 +19,7 @@ from .normalize import apply_defaults
 from .physics import check_physics
 from .schema import SCENE_SCHEMA, scene_schema
 from .semantic import check_scene
+from .warnings import drop_accepted
 
 MAX_SCHEMA_ISSUES = 100
 _AIM_ONE_OF = [{"required": ["look_at"]}, {"required": ["rotation"]}]
@@ -106,6 +107,7 @@ def validate_scene(document: Any) -> ValidationResult:
         if not placement.issues:
             issues += check_physics(normalized, placement)
         extras["placement"] = placement
+    issues = drop_accepted(issues, normalized)
     has_errors = any(i.severity == "error" for i in issues)
     return ValidationResult(
         tuple(issues),

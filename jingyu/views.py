@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import colorsys
 import io
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +19,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 from .candidate import Candidate
 from .errors import JingyuError
+from .lighting import LightMap
 from .locate import IdMask
 
 VIEWS: dict[str, str] = {
@@ -27,6 +29,11 @@ VIEWS: dict[str, str] = {
     "squint": "Details blurred away: only big masses of value and colour remain (J7.1 two).",
     "grayscale": "Luminance only: is the value structure clear without colour? (J7.1 three).",
     "values": "Luminance quantised into a few value steps: the value plan (J7.1 three).",
+    "saturation": "Colour saturation as brightness: where the colour is strong or washed out.",
+    "light": (
+        "The render darkened except where one light (default: the environment's sun, else "
+        "the first light) reaches directly: where the light lands and what it misses."
+    ),
     "id_mask": "Each object in a flat distinct colour, with a legend.",
     "compare": "This candidate beside another one, same height (J7.1 five).",
 }
@@ -76,8 +83,13 @@ def render_view(
     max_size: int = 1024,
     levels: int = 5,
     other: Candidate | None = None,
+    light: str | None = None,
+    region: Mapping[str, Any] | None = None,
 ) -> RenderedView:
-    """Produce one view of *candidate* as PNG bytes."""
+    """Produce one view of *candidate* as PNG bytes, optionally cropped to *region*.
+
+    A cropped view is enlarged to *max_size* so details can be inspected.
+    """
 
     builders: dict[str, Callable[[], tuple[Image.Image, dict[str, Any]]]] = {
         "full": lambda: (_open_rgb(candidate), {}),
@@ -86,6 +98,8 @@ def render_view(
         "squint": lambda: _squint(candidate),
         "grayscale": lambda: (ImageOps.grayscale(_open_rgb(candidate)), {}),
         "values": lambda: _values(candidate, levels),
+        "saturation": lambda: _saturation(candidate),
+        "light": lambda: _light(candidate, light),
         "id_mask": lambda: _id_mask(candidate),
         "compare": lambda: _compare(candidate, other),
     }
@@ -95,8 +109,66 @@ def render_view(
         )
     image, meta = builders[view]()
     limit = GLANCE_SIZE if view == "glance" else max_size
+    if region is not None:
+        if view in ("glance", "compare"):
+            raise JingyuError("tool.invalid_arguments", f"the {view} view cannot be cropped")
+        image, meta["region"] = _crop(image, region)
+        scale = limit / max(image.size)
+        if scale > 1:
+            size = (max(1, round(image.width * scale)), max(1, round(image.height * scale)))
+            image = image.resize(size, Image.Resampling.LANCZOS)
     fitted = _fit(image, limit)
     return _encode(fitted, {"view": view, **meta})
+
+
+def _crop(image: Image.Image, region: Mapping[str, Any]) -> tuple[Image.Image, dict[str, int]]:
+    width, height = image.size
+    if all(k in region for k in ("u0", "v0", "u1", "v1")):
+        box = (
+            math.floor(float(region["u0"]) * width),
+            math.floor(float(region["v0"]) * height),
+            round(float(region["u1"]) * width),
+            round(float(region["v1"]) * height),
+        )
+    elif all(k in region for k in ("x0", "y0", "x1", "y1")):
+        box = (int(region["x0"]), int(region["y0"]), int(region["x1"]), int(region["y1"]))
+    else:
+        raise JingyuError("tool.invalid_arguments", "a region needs x0/y0/x1/y1 or u0/v0/u1/v1")
+    x0, y0, x1, y1 = box
+    if not (0 <= x0 < x1 <= width and 0 <= y0 < y1 <= height):
+        raise JingyuError(
+            "locate.out_of_bounds",
+            f"region {box} is not inside the {width}x{height} image",
+        )
+    return image.crop(box), {"x0": x0, "y0": y0, "x1": x1, "y1": y1}
+
+
+def _saturation(candidate: Candidate) -> tuple[Image.Image, dict[str, Any]]:
+    hsv = _open_rgb(candidate).convert("HSV")
+    saturation = hsv.getchannel("S")
+    histogram = saturation.histogram()
+    total = sum(histogram)
+    mean = sum(value * count for value, count in enumerate(histogram)) / max(total, 1) / 255
+    return saturation, {"mean_saturation": round(mean, 3)}
+
+
+def _light(candidate: Candidate, light: str | None) -> tuple[Image.Image, dict[str, Any]]:
+    lights = LightMap.load(candidate)
+    ids = [entry["id"] for entry in lights.lights]
+    if light is None:
+        if not ids:
+            raise JingyuError("light.unknown_light", "the scene has no lights to show")
+        light = "environment.sun" if "environment.sun" in ids else ids[0]
+    base = _open_rgb(candidate)
+    mask = lights.lit_mask(light).resize(base.size, Image.Resampling.NEAREST)
+    dim = Image.eval(base, lambda value: value // 4)
+    shown = Image.composite(base, dim, mask)
+    histogram = mask.histogram()
+    return shown, {
+        "light": light,
+        "lights": ids,
+        "reached_fraction": round(histogram[255] / max(sum(histogram), 1), 4),
+    }
 
 
 def _squint(candidate: Candidate) -> tuple[Image.Image, dict[str, Any]]:

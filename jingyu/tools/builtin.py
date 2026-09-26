@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
+from PIL import Image
+
 from .. import __version__, conventions
 from .. import constitution as constitution_mod
 from ..candidate import CandidateStore
@@ -13,8 +15,10 @@ from ..doctor import diagnose
 from ..environments import ENVIRONMENTS
 from ..errors import ERROR_CODES, JingyuError
 from ..geometry import GEOMETRY
-from ..locate import IdMask
+from ..lighting import LightMap
+from ..locate import Box, IdMask
 from ..materials import MATERIALS
+from ..measure import colors_by_object, object_color_report
 from ..render import render_scene
 from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
 from ..scene.diff import diff_scenes
@@ -145,8 +149,11 @@ GUIDE_WORKFLOW = [
     "Describe relations, not coordinates: put things that belong together in a group "
     "and move the group; give every object that sits on something rest_on (its height "
     "is then computed); cut windows and doors into a wall with openings.",
+    "Close interiors: a room with windows needs walls and a ceiling all round, even out "
+    "of frame, or sky light pours in from above (light.open_to_sky).",
     "validate_scene until it is valid. Treat physics warnings (an object sinking into "
-    "another or hovering) as mistakes unless the picture needs them.",
+    "another or hovering) as mistakes unless the picture needs them; mark deliberate "
+    "joins with attached_to, and deliberate warnings with accept_warnings.",
     "render_scene with quality 'preview'. Read the warnings on the result: frame.* "
     "warnings say an object is out of frame or the exposure is off.",
     "Look before you measure: view the image (glance, then squint or values), and write "
@@ -154,6 +161,11 @@ GUIDE_WORKFLOW = [
     "the biggest gap (light, silhouette, space, colour). describe_layout and "
     "locate_in_candidate help find where to change; they do not decide whether the "
     "picture works.",
+    "Measure instead of guessing why: describe_light and the 'light' view show where "
+    "each light lands and what casts each shadow; locate and describe_layout give each "
+    "object's rendered colour next to its material colour, so colour drift from warm or "
+    "cool light shows as a number; view any image with a region to see details up "
+    "close.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -341,6 +353,8 @@ def _view_candidate(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         max_size=args.get("max_size", 1024),
         levels=args.get("levels", 5),
         other=other,
+        light=args.get("light"),
+        region=args.get("region"),
     )
     return ToolResult(
         {
@@ -358,18 +372,81 @@ def _view_candidate(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 def _locate(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     candidate = _store(ctx).open(args["candidate_id"])
     mask = IdMask.load(candidate)
-    if "point" in args:
-        result = mask.locate_point(args["point"], radius=args.get("radius", 3))
-        mode = "point"
-    else:
-        result = mask.locate_region(args["region"])
-        mode = "region"
+    scene = candidate.scene()
+    lights = LightMap.load(candidate) if candidate.has_light_map else None
+    with Image.open(candidate.image_path) as image:
+        image.load()
+        if "point" in args:
+            result = mask.locate_point(args["point"], radius=args.get("radius", 3))
+            mode = "point"
+            p = result["point"]
+            radius = args.get("radius", 3)
+            box = Box(
+                max(0, p["x"] - radius),
+                max(0, p["y"] - radius),
+                min(mask.width, p["x"] + radius + 1),
+                min(mask.height, p["y"] + radius + 1),
+            )
+            _add_colors(result, mask, image, box, scene)
+            if lights is not None:
+                result["light"] = lights.at_uv(p["u"], p["v"])
+        else:
+            result = mask.locate_region(args["region"])
+            mode = "region"
+            r = result["region"]
+            box = Box(r["x0"], r["y0"], r["x1"], r["y1"])
+            _add_colors(result, mask, image, box, scene)
+            if lights is not None:
+                result["light"] = lights.in_region(
+                    r["x0"] / mask.width,
+                    r["y0"] / mask.height,
+                    r["x1"] / mask.width,
+                    r["y1"] / mask.height,
+                )
     return ToolResult({"candidate_id": candidate.id, "mode": mode, "result": result})
+
+
+def _add_colors(
+    result: dict[str, Any], mask: IdMask, image: Image.Image, box: Box, scene: dict[str, Any]
+) -> None:
+    """Attach rendered colours (and their drift from the material) to located objects."""
+
+    colors = colors_by_object(mask, image, box)
+    by_object = {
+        (mask.entry(index) or {}).get("object"): (index, rgb) for index, rgb in colors.items()
+    }
+    rows = result.get("objects") or result.get("neighborhood") or []
+    for row in rows:
+        found = by_object.get(row.get("object"))
+        if found is not None:
+            row.update(object_color_report(found[1], scene, row.get("material")))
+    hit = result.get("hit")
+    if hit is not None and hit.get("object") in by_object:
+        hit.update(object_color_report(by_object[hit["object"]][1], scene, hit.get("material")))
 
 
 def _describe_layout(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     candidate = _store(ctx).open(args["candidate_id"])
-    return ToolResult({"candidate_id": candidate.id, "layout": IdMask.load(candidate).layout()})
+    mask = IdMask.load(candidate)
+    layout = mask.layout()
+    scene = candidate.scene()
+    with Image.open(candidate.image_path) as image:
+        image.load()
+        colors = colors_by_object(mask, image)
+    names = {(mask.entry(i) or {}).get("object"): rgb for i, rgb in colors.items()}
+    lights = LightMap.load(candidate).document["objects"] if candidate.has_light_map else {}
+    for row in layout["objects"]:
+        if row["object"] in names:
+            row.update(object_color_report(names[row["object"]], scene, row.get("material")))
+        if row["object"] in lights:
+            row["lit_fraction"] = lights[row["object"]]["lit_fraction"]
+    return ToolResult({"candidate_id": candidate.id, "layout": layout})
+
+
+def _describe_light(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    candidate = _store(ctx).open(args["candidate_id"])
+    summary = LightMap.load(candidate).summary()
+    return ToolResult({"candidate_id": candidate.id, **summary})
 
 
 def _get_constitution(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -657,7 +734,9 @@ REGISTRY.add(
         title="View a candidate",
         description=(
             "Look at a candidate one of several ways: full, glance, flip, squint, grayscale, "
-            "values, id_mask, or compare (beside other_candidate_id)."
+            "values, saturation, light (where one light lands), id_mask, or compare (beside "
+            "other_candidate_id). Give region to crop and enlarge any view except glance and "
+            "compare, to inspect a detail."
         ),
         input_schema=_input(
             {
@@ -672,6 +751,11 @@ REGISTRY.add(
                     "description": "Value steps for the values view.",
                 },
                 "other_candidate_id": _CANDIDATE_ID,
+                "light": {
+                    "type": "string",
+                    "description": "Light id for the light view (environment.sun for the sun).",
+                },
+                "region": _REGION,
             },
             ["candidate_id", "view"],
         ),
@@ -696,7 +780,10 @@ REGISTRY.add(
         title="Locate what is at a point or in a region",
         description=(
             "Point at the image and get the scene back: the object, its material and the "
-            "JSON Pointers to edit, from the candidate's exact id mask."
+            "JSON Pointers to edit, from the candidate's exact id mask. Also returns the "
+            "colour actually rendered there beside the material's own colour (so drift from "
+            "warm light or the view transform is visible) and which lights reach the spot "
+            "directly."
         ),
         input_schema=_input(
             {
@@ -726,14 +813,42 @@ REGISTRY.add(
         name="describe_layout",
         title="Describe the layout of a candidate",
         description=(
-            "How the frame is distributed: each visible object's area, bounding box and "
-            "centroid, the background share, and which objects are out of frame."
+            "How the frame is distributed: each visible object's area, bounding box, "
+            "centroid, rendered colour against its material colour, and the share of it each "
+            "light reaches; the background share, and which objects are out of frame."
         ),
         input_schema=_input({"candidate_id": _CANDIDATE_ID}, ["candidate_id"]),
         output_schema=_output(
             {"candidate_id": _STRING, "layout": _ANY_OBJECT}, ["candidate_id", "layout"]
         ),
         handler=_describe_layout,
+    )
+)
+REGISTRY.add(
+    Tool(
+        name="describe_light",
+        title="How light falls in a candidate",
+        description=(
+            "From the candidate's light pass: every light (the environment's sun is "
+            "environment.sun), for each visible object the share of it each light reaches "
+            "directly and the share facing away, the biggest shadows as (light, caster, "
+            "receiver), the objects inside the camera's view, and how open the camera's "
+            "surroundings are to the sky. Use it to answer 'why is this dark' or 'where "
+            "does the sun land' instead of computing angles."
+        ),
+        input_schema=_input({"candidate_id": _CANDIDATE_ID}, ["candidate_id"]),
+        output_schema=_output(
+            {
+                "candidate_id": _STRING,
+                "lights": {"type": "array"},
+                "objects": _ANY_OBJECT,
+                "shadows": {"type": "array"},
+                "in_view": {"type": "array"},
+                "openness": _ANY_OBJECT,
+            },
+            ["candidate_id", "lights", "objects", "shadows", "in_view", "openness"],
+        ),
+        handler=_describe_light,
     )
 )
 REGISTRY.add(

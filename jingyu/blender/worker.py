@@ -69,7 +69,7 @@ def _probe() -> dict[str, Any]:
 
 
 def _render(request: dict[str, Any]) -> dict[str, Any]:
-    from jingyu.blender import build, compat, kit, passes
+    from jingyu.blender import build, compat, diagnostics, kit, passes
     from jingyu.errors import JingyuError
 
     spec = request.get("scene")
@@ -78,6 +78,7 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
         raise JingyuError("worker.bad_request", "render needs 'scene' and an existing 'output_dir'")
     overrides = request.get("overrides") or {}
     want_id_mask = bool((request.get("passes") or {}).get("id_mask", True))
+    want_light = bool((request.get("passes") or {}).get("light", False))
 
     timings: dict[str, int] = {}
     started = time.perf_counter()
@@ -98,6 +99,16 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
     timings["render_ms"] = _ms_since(mark)
 
     outputs = {"image": image.name}
+    light_map: dict[str, Any] | None = None
+    if want_light:
+        mark = time.perf_counter()
+        light_mask = output_dir / "light_mask.png"
+        light_map = diagnostics.light_pass(
+            scene, built.visible, built.lights, built.transmissive, light_mask
+        )
+        outputs["light_mask"] = light_mask.name
+        timings["light_ms"] = _ms_since(mark)
+
     id_map: dict[str, Any] | None = None
     if want_id_mask:
         mark = time.perf_counter()
@@ -112,6 +123,7 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
         "render": applied,
         "outputs": outputs,
         "id_map": id_map,
+        "light_map": light_map,
         "timings": timings,
         "warnings": built.warnings,
     }

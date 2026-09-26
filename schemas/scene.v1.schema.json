@@ -34,6 +34,24 @@
       "maxLength": 8000,
       "description": "Free-form context; never affects rendering."
     },
+    "accept_warnings": {
+      "type": "array",
+      "uniqueItems": true,
+      "default": [],
+      "items": {
+        "enum": [
+          "spec.scene_unlit",
+          "spec.empty_scene",
+          "physics.intersection",
+          "physics.floating",
+          "frame.not_visible",
+          "frame.underexposed",
+          "frame.overexposed",
+          "light.open_to_sky"
+        ]
+      },
+      "description": "Warning codes that describe the picture as intended, e.g. frame.underexposed for a deliberately dark image; they are no longer reported. Prefer fixing the scene."
+    },
     "world": {
       "type": "object",
       "additionalProperties": false,
@@ -993,6 +1011,31 @@
         "parent": {
           "$ref": "#/$defs/id",
           "description": "Id of a group this entry belongs to. Its location, rotation and aim are then relative to the group, and it moves with the group."
+        },
+        "accept_warnings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "spec.scene_unlit",
+              "spec.empty_scene",
+              "physics.intersection",
+              "physics.floating",
+              "frame.not_visible",
+              "frame.underexposed",
+              "frame.overexposed",
+              "light.open_to_sky"
+            ]
+          },
+          "description": "Warning codes that are intended for this object only, e.g. frame.not_visible for a wall or ceiling that closes the room out of sight."
+        },
+        "attached_to": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "description": "Ids of objects this one is fixed to on purpose: walls meeting at a corner, a lamp hanging from a ceiling, a nail in a wall. Sinking into them and hovering are then not reported."
         },
         "rest_on": {
           "$ref": "#/$defs/id",

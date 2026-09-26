@@ -17,6 +17,8 @@ from jingyu.candidate import (
     ID_MAP_NAME,
     ID_MASK_NAME,
     IMAGE_NAME,
+    LIGHT_MAP_NAME,
+    LIGHT_MASK_NAME,
     SCENE_NAME,
     Candidate,
     CandidateStore,
@@ -111,6 +113,56 @@ def synthetic_mask(width: int = WIDTH, height: int = HEIGHT) -> Image.Image:
     return mask
 
 
+#: Lights of the synthetic light pass: the sun reaches the left half of every
+#: surface, the lamp the whole vase.
+SYNTHETIC_LIGHTS = [
+    {"bit": 0, "id": "environment.sun", "kind": "sun"},
+    {"bit": 1, "id": "key", "kind": "area"},
+]
+
+
+def synthetic_light_mask(width: int = WIDTH, height: int = HEIGHT) -> Image.Image:
+    """Light bits over the default mask layout (bit 0: x < width/2; bit 1: the vase)."""
+
+    ids = synthetic_mask(width, height)
+    light = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    vase = encode_index(2)
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = ids.getpixel((x, y))
+            if a == 0:
+                continue
+            bits = (1 if x < width // 2 else 0) | (2 if (r, g, b) == vase else 0)
+            light.putpixel((x, y), (0, 0, bits, 255))
+    return light
+
+
+def synthetic_light_map(width: int = WIDTH, height: int = HEIGHT) -> dict[str, Any]:
+    return {
+        "schema": "jingyu.light-map.v1",
+        "width": width,
+        "height": height,
+        "lights": SYNTHETIC_LIGHTS,
+        "objects": {
+            "vase": {
+                "samples": VASE_PIXELS,
+                "lit_fraction": {"environment.sun": 0.5, "key": 1.0},
+                "facing_away_fraction": {"environment.sun": 0.0, "key": 0.0},
+            }
+        },
+        "shadows": [
+            {
+                "light": "environment.sun",
+                "caster": "vase",
+                "receiver": "floor",
+                "fraction_of_receiver": 0.1,
+            }
+        ],
+        "in_view": ["crate", "floor", "vase"],
+        "openness": {"open_fraction": 0.5, "open_upward_fraction": 1.0},
+    }
+
+
 def synthetic_image(width: int, height: int) -> Image.Image:
     """A deterministic, asymmetric RGB gradient."""
 
@@ -138,6 +190,7 @@ class CandidateFactory:
         with_mask: bool = True,
         extra_pixels: Mapping[tuple[int, int], tuple[int, int, int, int]] | None = None,
         id_map: dict[str, Any] | None = None,
+        with_light: bool = True,
     ) -> Candidate:
         """Commit a synthetic candidate through the real :class:`CandidateStore`."""
 
@@ -164,6 +217,10 @@ class CandidateFactory:
                 "objects": SYNTHETIC_ID_MAP_OBJECTS,
             }
             (staging / ID_MAP_NAME).write_bytes(pretty_bytes(document))
+        if with_light:
+            synthetic_light_mask(width, height).save(staging / LIGHT_MASK_NAME)
+            light_map = synthetic_light_map(width, height)
+            (staging / LIGHT_MAP_NAME).write_bytes(pretty_bytes(light_map))
 
         receipt = {
             "candidate_id": candidate_id,

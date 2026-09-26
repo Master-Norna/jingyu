@@ -32,6 +32,8 @@ SCENE_NAME = "scene.json"
 IMAGE_NAME = "image.png"
 ID_MASK_NAME = "id_mask.png"
 ID_MAP_NAME = "id_map.json"
+LIGHT_MASK_NAME = "light_mask.png"
+LIGHT_MAP_NAME = "light_map.json"
 
 CANDIDATE_ID_RE = re.compile(r"^c_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}_[0-9a-f]{4}$")
 
@@ -61,6 +63,10 @@ class Candidate:
     @property
     def has_id_mask(self) -> bool:
         return ID_MASK_NAME in self.receipt.get("files", {})
+
+    @property
+    def has_light_map(self) -> bool:
+        return LIGHT_MAP_NAME in self.receipt.get("files", {})
 
     def scene(self) -> dict[str, Any]:
         document = load_file_strict(self.path / SCENE_NAME)
@@ -182,6 +188,8 @@ __all__ = [
     "ID_MAP_NAME",
     "ID_MASK_NAME",
     "IMAGE_NAME",
+    "LIGHT_MAP_NAME",
+    "LIGHT_MASK_NAME",
     "RECEIPT_NAME",
     "RECEIPT_SCHEMA",
     "SCENE_NAME",

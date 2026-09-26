@@ -11,6 +11,8 @@ from jingyu.candidate import (
     ID_MAP_NAME,
     ID_MASK_NAME,
     IMAGE_NAME,
+    LIGHT_MAP_NAME,
+    LIGHT_MASK_NAME,
     RECEIPT_NAME,
     RECEIPT_SCHEMA,
     SCENE_NAME,
@@ -57,6 +59,7 @@ def test_commit_publishes_the_staging_directory(workspace: Workspace, candidate:
     assert (candidate.path / RECEIPT_NAME).read_bytes() == pretty_bytes(receipt)
     assert receipt["schema"] == RECEIPT_SCHEMA
     names = {IMAGE_NAME, ID_MASK_NAME, ID_MAP_NAME, SCENE_NAME, "blender.log"}
+    names |= {LIGHT_MASK_NAME, LIGHT_MAP_NAME}
     assert set(receipt["files"]) == names
     for name, meta in receipt["files"].items():
         path = candidate.path / name
@@ -89,6 +92,7 @@ def test_open_returns_the_committed_candidate(workspace: Workspace, candidate: C
     opened = CandidateStore(workspace).open(candidate.id)
     assert opened == candidate
     assert opened.has_id_mask
+    assert opened.has_light_map
     assert opened.image_path == candidate.path / IMAGE_NAME
     assert opened.scene()["id"] == "synthetic"
 

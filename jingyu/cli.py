@@ -52,11 +52,29 @@ def _save_images(result: ToolResult, directory: Path, stem: str) -> list[str]:
     return paths
 
 
+def _image_stem(name: str, arguments: dict[str, Any], data: dict[str, Any]) -> str:
+    """A file name that differs between views, crops and candidates."""
+
+    parts = [str(data.get("candidate_id") or name)]
+    if "view" in arguments:
+        parts.append(str(arguments["view"]))
+    if "light" in arguments:
+        parts.append(str(arguments["light"]))
+    region = arguments.get("region")
+    if isinstance(region, dict):
+        parts.append("crop-" + "-".join(str(region[k]) for k in sorted(region)))
+    if "other_candidate_id" in arguments:
+        parts.append(str(arguments["other_candidate_id"]))
+    return "-".join(parts)
+
+
 def _invoke(
     context: ToolContext, name: str, arguments: dict[str, Any], image_dir: Path, stem: str
 ) -> dict[str, Any]:
     result = REGISTRY.invoke(name, arguments, context)
     data = dict(result.data)
+    if stem == name:  # generic `call`: name files after what they show, not the tool
+        stem = _image_stem(name, arguments, data)
     saved = _save_images(result, image_dir, stem)
     if saved:
         data["images"] = saved

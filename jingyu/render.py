@@ -17,6 +17,8 @@ from .candidate import (
     ID_MAP_NAME,
     ID_MASK_NAME,
     IMAGE_NAME,
+    LIGHT_MAP_NAME,
+    LIGHT_MASK_NAME,
     SCENE_NAME,
     Candidate,
     CandidateStore,
@@ -28,6 +30,7 @@ from .canonical_json import pretty_bytes
 from .errors import Issue, JingyuError
 from .frame import check_frame
 from .scene import validate_scene
+from .scene.warnings import drop_accepted
 from .workspace import Workspace
 
 Quality = Literal["preview", "final"]
@@ -81,7 +84,7 @@ def render_scene(
                 "scene": normalized,
                 "output_dir": str(staging),
                 "overrides": quality_overrides(normalized["render"], quality),
-                "passes": {"id_mask": True},
+                "passes": {"id_mask": True, "light": True},
             },
             staging,
             timeout_s=timeout_s,
@@ -93,6 +96,9 @@ def render_scene(
         (staging / SCENE_NAME).write_bytes(pretty_bytes(normalized))
         if response.get("id_map") is not None:
             (staging / ID_MAP_NAME).write_bytes(pretty_bytes(response["id_map"]))
+        light_map = response.get("light_map")
+        if light_map is not None:
+            (staging / LIGHT_MAP_NAME).write_bytes(pretty_bytes(light_map))
 
         id_map = response.get("id_map")
         frame_warnings = check_frame(
@@ -100,8 +106,9 @@ def render_scene(
             staging / ID_MASK_NAME if id_map is not None else None,
             id_map,
             normalized,
+            light_map,
         )
-        warnings = [*result.warnings, *frame_warnings]
+        warnings = [*result.warnings, *drop_accepted(frame_warnings, normalized)]
 
         identity = scene_identity(normalized)
         receipt = {
@@ -145,6 +152,12 @@ def _check_outputs(staging: Path, response: Mapping[str, Any]) -> None:
         if outputs["id_mask"] != ID_MASK_NAME or not isinstance(response.get("id_map"), Mapping):
             raise JingyuError("blender.bad_response", "id mask output without an id map")
         expected.append(ID_MASK_NAME)
+    if "light_mask" in outputs:
+        if outputs["light_mask"] != LIGHT_MASK_NAME or not isinstance(
+            response.get("light_map"), Mapping
+        ):
+            raise JingyuError("blender.bad_response", "light mask output without a light map")
+        expected.append(LIGHT_MASK_NAME)
     for name in expected:
         if not (staging / name).is_file():
             raise JingyuError("blender.bad_response", f"the worker did not write {name}")
