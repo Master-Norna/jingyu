@@ -12,12 +12,12 @@ from PIL import Image, ImageChops, ImageDraw
 from jingyu.style import (
     PRESETS,
     _colour_edges,
+    _stippling_centers,
     apply_style,
     flatten,
     kuwahara,
     outlines,
     paper_texture,
-    _stippling_centers,
 )
 from jingyu.style_strokes import directional_hatch, local_tangent, tapered_brush
 
@@ -693,7 +693,7 @@ def test_stipple_density_increases_smoothly_across_tonal_bands() -> None:
     centers = _stippling_centers(shade, scale=1.0, seed=14)
     counts = [sum(i * 64 <= x < (i + 1) * 64 for x, _ in centers) for i in range(4)]
     assert counts == sorted(counts)
-    assert all(a < b for a, b in zip(counts, counts[1:]))
+    assert all(counts[i] < counts[i + 1] for i in range(3))
 
 
 def test_stipple_never_spills_ink_into_near_white_foreground() -> None:
