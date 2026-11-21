@@ -226,7 +226,7 @@ def _wash(
     return _composite(
         image,
         target,
-        operation["color"],
+        str(operation.get("color", "#6d5948")),
         float(operation.get("strength", 0.35)),
     )
 
@@ -256,7 +256,7 @@ def _hatch(
         )
     darkness = ImageOps.invert(ImageOps.grayscale(image))
     stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
-    return _composite(image, stroke, operation["color"], strength)
+    return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
 
 
 def _edge_ink(
@@ -268,7 +268,10 @@ def _edge_ink(
     kernel = max(3, math.ceil(width) * 2 + 1)
     boundary = ImageChops.subtract(target, target.filter(ImageFilter.MinFilter(kernel)))
     return _composite(
-        image, boundary, operation["color"], float(operation.get("strength", 0.9))
+        image,
+        boundary,
+        str(operation.get("color", "#27211e")),
+        float(operation.get("strength", 0.9)),
     )
 
 
