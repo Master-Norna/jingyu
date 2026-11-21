@@ -11,7 +11,13 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
 from jingyu.errors import JingyuError
-from jingyu.paint import _surface_tangent, _tone_tangent, apply_paint, paint_candidate
+from jingyu.paint import (
+    _draw_tapered_stroke,
+    _surface_tangent,
+    _tone_tangent,
+    apply_paint,
+    paint_candidate,
+)
 from jingyu.tools.builtin import REGISTRY
 from jingyu.tools.registry import ToolContext
 
@@ -517,3 +523,112 @@ def test_surface_rejects_missing_or_misaligned_normal_image() -> None:
         with pytest.raises(JingyuError) as exc:
             apply_paint(image, [action], id_mask=ids, id_map=mapping, normal_mask=normals)
         assert exc.value.code == "candidate.integrity_mismatch"
+
+
+def test_tapered_stroke_tapers_width_and_ink_without_randomness() -> None:
+    points = [(10.0 + 3 * i, 20.0) for i in range(25)]
+    first = Image.new("L", (96, 42), 0)
+    _draw_tapered_stroke(ImageDraw.Draw(first), points, width=8, taper=1)
+    second = Image.new("L", first.size, 0)
+    _draw_tapered_stroke(ImageDraw.Draw(second), points, width=8, taper=1)
+    assert first.tobytes() == second.tobytes()
+    assert first.getpixel((46, 20)) == 255
+    assert 0 < first.getpixel((10, 20)) < 255
+    assert first.getpixel((46, 16)) > 0
+    assert first.getpixel((10, 16)) == 0
+
+
+@pytest.mark.parametrize("flow", ["tone", "contour", "surface"])
+def test_tapered_hatching_keeps_legacy_zero_and_stays_inside_target(flow: str) -> None:
+    image = Image.new("RGB", (96, 96), (30, 30, 30))
+    ids = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
+    ImageDraw.Draw(ids).ellipse((18, 18, 77, 77), fill=(0, 0, 1, 255))
+    normals = Image.new("RGBA", image.size, (255, 128, 128, 255))
+    mapping = {"objects": {"1": {"object": "vase"}}}
+    base = {
+        "op": "hatch",
+        "flow": flow,
+        "target": {"object": "vase"},
+        "angle": 0,
+        "spacing": 7,
+        "width": 7,
+        "strength": 1,
+        "color": "#ffffff",
+    }
+    kwargs = {"id_mask": ids, "id_map": mapping, "normal_mask": normals}
+    legacy = apply_paint(image, [base], **kwargs)
+    explicit_zero = apply_paint(image, [{**base, "taper": 0}], **kwargs)
+    tapered = apply_paint(image, [{**base, "taper": 1}], **kwargs)
+    repeated = apply_paint(image, [{**base, "taper": 1}], **kwargs)
+    assert legacy.tobytes() == explicit_zero.tobytes()
+    assert tapered.tobytes() == repeated.tobytes()
+    assert tapered.tobytes() != legacy.tobytes()
+    assert tapered.tobytes() != image.tobytes()
+    for point in ((0, 0), (10, 48), (85, 48), (48, 90)):
+        assert tapered.getpixel(point) == image.getpixel(point)
+
+
+def test_taper_validation_and_immutable_recipe(make_candidate: CandidateFactory) -> None:
+    source = make_candidate(with_normal=True)
+    store = CandidateStore(make_candidate.workspace)
+    ctx = ToolContext(make_candidate.workspace)
+    operation = {
+        "op": "hatch",
+        "flow": "surface",
+        "target": {"object": "vase"},
+        "taper": 0.8,
+        "spacing": 7,
+        "width": 5,
+    }
+    before = source.image_path.read_bytes()
+    result = REGISTRY.invoke(
+        "paint_candidate",
+        {"candidate_id": source.id, "operations": [operation], "return_image": False},
+        ctx,
+    )
+    child = store.open(result.data["candidate_id"])
+    assert child.receipt["paint"]["operations"][0]["taper"] == 0.8
+    assert source.image_path.read_bytes() == before
+    assert store.verify(source) == []
+    assert store.verify(child) == []
+
+    for invalid in [
+        {**operation, "taper": -0.1},
+        {**operation, "taper": 1.1},
+        {**operation, "flow": "straight"},
+        {**operation, "flow": "straight", "taper": 0},
+        {**operation, "op": "wash"},
+    ]:
+        with pytest.raises(JingyuError) as exc:
+            REGISTRY.invoke(
+                "paint_candidate",
+                {"candidate_id": source.id, "operations": [invalid], "return_image": False},
+                ctx,
+            )
+        assert exc.value.code == "tool.invalid_arguments"
+
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(
+            Image.new("RGB", (40, 40)),
+            [{"op": "hatch", "flow": "straight", "taper": 0.5, "target": {
+                "region": {"x0": 0, "y0": 0, "x1": 40, "y1": 40}
+            }}],
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+
+
+def test_tapered_curves_preserve_stroke_budget() -> None:
+    image = Image.new("RGB", (800, 800), (40, 40, 40))
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(
+            image,
+            [{
+                "op": "hatch",
+                "flow": "tone",
+                "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
+                "spacing": 3,
+                "taper": 1,
+            }],
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+    assert "spacing" in (exc.value.hint or "")
