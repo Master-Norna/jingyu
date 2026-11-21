@@ -931,7 +931,11 @@ def test_screenprint_does_not_wrap_plate_at_opposite_canvas_edge() -> None:
     source = Image.new("RGB", (140, 90), (255, 255, 255))
     ImageDraw.Draw(source).rectangle((0, 0, 21, 89), fill=(19, 35, 70))
     result = apply_style(source, None, {"preset": "screenprint", "paper": 0, "seed": 24})
-    assert all(result.getpixel((x, y)) == (251, 248, 239) for x in range(90, 140) for y in range(90))
+    assert all(
+        result.getpixel((x, y)) == (251, 248, 239)
+        for x in range(90, 140)
+        for y in range(90)
+    )
 
 
 @pytest.mark.parametrize("size", [(1, 1), (1, 30), (2, 2), (7, 5), (31, 9)])
