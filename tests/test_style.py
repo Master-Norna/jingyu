@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import random
+
 import pytest
 from helpers import CRATE_BOX, VASE_BOX, synthetic_mask
 from PIL import Image, ImageDraw
@@ -72,6 +74,33 @@ def test_style_preserves_transparent_background(preset: str, strength: float) ->
     painted = apply_style(source, synthetic_mask(), {"preset": preset, "strength": strength})
     assert painted.mode == "RGBA"
     assert painted.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+
+
+@pytest.mark.parametrize("preset", ["ink", "cel"])
+def test_zero_line_width_removes_all_outlines(preset: str) -> None:
+    render, mask = _render(), synthetic_mask()
+    assert outlines(mask, render.size, 0).getbbox() is None
+    without_lines = apply_style(render, mask, {"preset": preset, "line_width": 0})
+    without_mask = apply_style(render, None, {"preset": preset, "line_width": 0})
+    with_lines = apply_style(render, mask, {"preset": preset, "line_width": 40})
+    assert without_lines.tobytes() == without_mask.tobytes()
+    assert without_lines.tobytes() != with_lines.tobytes()
+
+
+def test_kuwahara_does_not_wrap_pixels_from_right_border_to_left() -> None:
+    rng = random.Random(0)
+    image = Image.new("L", (48, 36))
+    image.putdata([rng.randrange(256) for _ in range(48 * 36)])
+    changed = image.copy()
+    for y in range(36):
+        for x in range(43, 48):
+            changed.putpixel((x, y), 255 - image.getpixel((x, y)))
+    original = kuwahara(image.convert("RGB"), 5)
+    altered = kuwahara(changed.convert("RGB"), 5)
+    # The far right is outside the left edge's filter neighbourhood.
+    for y in range(5, 31):
+        for x in range(2):
+            assert original.getpixel((x, y)) == altered.getpixel((x, y))
 
 
 def test_ink_draws_dark_lines_on_edges() -> None:
