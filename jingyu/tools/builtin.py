@@ -181,7 +181,7 @@ GUIDE_WORKFLOW = [
     "cool light shows as a number; view any image with a region to see details up "
     "close.",
     "For a painted look set render.style (ink, watercolor, oil, cel, charcoal, woodcut, "
-    "pencil, stippling, gouache, pastel, etching, mosaic); "
+    "pencil, stippling, gouache, pastel, etching, mosaic, crayon, screenprint, papercut); "
     "the photographic "
     "render stays beside it (view render). For a series, keep a picture charter file and "
     "check_charter each picture against it: it answers with questions, not a score.",

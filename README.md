@@ -116,7 +116,8 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 油画、赛璐璐风格；画面宪章；常驻 worker。后续新增炭笔素描（`charcoal`）、木刻版画
 （`woodcut`）、交叉排线铅笔素描（`pencil`）、点描（`stippling`）与不透明水粉
 （`gouache`），再扩展粉彩（`pastel`）、铜版蚀刻（`etching`）和马赛克
-（`mosaic`）。全部采用确定性算法，无需新依赖。这些是可控图像绘制风格，
+（`mosaic`），以及蜡笔（`crayon`）、丝网印刷（`screenprint`）、剪纸拼贴
+（`papercut`）。全部采用确定性算法，无需新依赖。这些是可控图像绘制风格，
 并非真实材料的物理仿真。进度见 [CHANGELOG](CHANGELOG.md)，方案见
 [技术方案](docs/技术方案.md)。
 

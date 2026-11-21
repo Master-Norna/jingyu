@@ -302,3 +302,71 @@ def test_new_styles_keep_legacy_alpha_and_strength(preset: str) -> None:
     assert full.getchannel("A").tobytes() == alpha.tobytes()
     assert half.getchannel("A").tobytes() == alpha.tobytes()
     assert full.tobytes() != half.tobytes()
+
+
+@pytest.mark.parametrize("preset", ["crayon", "screenprint", "papercut"])
+def test_more_style_families_are_valid_scenes(preset: str) -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": preset, "seed": 9}
+    assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
+
+
+def test_crayon_has_colour_marks_and_exposed_paper() -> None:
+    source = Image.new("RGB", (100, 70), (27, 94, 185))
+    spec = {"preset": "crayon", "paper": 0, "seed": 4}
+    drawn = apply_style(source, None, spec)
+    repeat = apply_style(source, None, spec)
+    other = apply_style(source, None, {**spec, "seed": 5})
+    assert drawn.tobytes() == repeat.tobytes()
+    assert drawn.tobytes() != other.tobytes()
+    pixels = list(drawn.getdata())
+    assert any(v[2] > v[1] > v[0] for v in pixels)
+    assert any(v[0] > 220 and v[1] > 220 for v in pixels)
+
+
+def test_screenprint_uses_limited_inks_halftone_and_seeded_registration() -> None:
+    source = Image.new("RGB", (100, 70), (245, 212, 180))
+    ImageDraw.Draw(source).rectangle((48, 0, 99, 69), fill=(30, 45, 82))
+    spec = {"preset": "screenprint", "paper": 0, "seed": 7}
+    printed = apply_style(source, None, spec)
+    again = apply_style(source, None, spec)
+    shifted = apply_style(source, None, {**spec, "seed": 8})
+    assert printed.tobytes() == again.tobytes()
+    assert printed.tobytes() != shifted.tobytes()
+    assert len(set(printed.getdata())) < 30
+    dark = [printed.getpixel((x, y)) for y in range(10, 60) for x in range(58, 95)]
+    assert len(set(dark)) >= 2  # a distinct halftone ink plate over the flat colour
+
+
+def test_papercut_uses_colour_regions_and_drop_shadows() -> None:
+    source = Image.new("RGB", (108, 72), (223, 185, 110))
+    ImageDraw.Draw(source).rectangle((26, 16, 81, 54), fill=(43, 89, 162))
+    spec = {"preset": "papercut", "paper": 0, "seed": 12}
+    collage = apply_style(source, None, spec)
+    assert collage.tobytes() == apply_style(source, None, spec).tobytes()
+    assert collage.tobytes() != source.tobytes()
+    center = collage.getpixel((50, 35))
+    outer = collage.getpixel((8, 8))
+    assert center[2] > center[0]
+    assert outer[0] > outer[2]
+    assert len(set(collage.getdata())) >= 3  # paper, layer colours, cast shadows
+    assert len(set(collage.getdata())) < 30
+
+
+def test_new_styles_are_distinct_and_keep_legacy_alpha_strength() -> None:
+    source = _render().convert("RGBA")
+    alpha = Image.new("L", source.size, 0)
+    ImageDraw.Draw(alpha).rectangle((12, 9, 51, 38), fill=128)
+    source.putalpha(alpha)
+    results = []
+    for preset in ("crayon", "screenprint", "papercut"):
+        original = {"preset": preset, "strength": 1}
+        full = apply_style(source, synthetic_mask(), original)
+        half = apply_style(source, synthetic_mask(), {**original, "strength": 0.5})
+        assert full.getchannel("A").tobytes() == alpha.tobytes()
+        assert half.getchannel("A").tobytes() == alpha.tobytes()
+        assert full.tobytes() != half.tobytes()
+        results.append(full.tobytes())
+    assert len(set(results)) == 3

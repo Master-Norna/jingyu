@@ -41,6 +41,9 @@ PRESETS: dict[str, str] = {
     "pastel": "Layered coloured chalk marks with soft smudging and broken paper coverage.",
     "etching": "Fine engraved ink lines and graduated crosshatching on printmaking paper.",
     "mosaic": "Discrete coloured tesserae separated by visible mortar lines.",
+    "crayon": "Broken, saturated wax-pencil strokes over exposed toothy paper.",
+    "screenprint": "Flat limited-colour ink plates with coarse halftone and registration fringe.",
+    "papercut": "Layered cut-colour silhouettes with hard paper edges and cast shadows.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -85,6 +88,12 @@ def apply_style(
         styled = _etching(rgb, id_mask, line, scale, paper, seed)
     elif preset == "mosaic":
         styled = _mosaic(rgb, scale, paper, seed)
+    elif preset == "crayon":
+        styled = _crayon(rgb, scale, paper, seed)
+    elif preset == "screenprint":
+        styled = _screenprint(rgb, scale, paper, seed)
+    elif preset == "papercut":
+        styled = _papercut(rgb, scale, paper, seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
@@ -540,6 +549,98 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
                 fill=tile_colour,
             )
     return _on(background, paper_texture(image.size, seed + 131, paper * 0.18))
+
+
+def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Lay short waxy coloured marks with unpainted paper between strokes."""
+
+    ground = Image.new("RGB", image.size, (250, 247, 234))
+    strokes = ImageDraw.Draw(ground)
+    pitch = max(5, round(12 * scale))
+    span = max(3, round(10 * scale))
+    thickness = max(2, round(2.8 * scale))
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            for layer in range(2):
+                key = (
+                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 149 + layer) * 83492791
+                ) & 0xFFFFFFFF
+                px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
+                py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
+                sampled = cast(tuple[int, int, int], image.getpixel((px, py)))
+                wax = tuple(max(0, min(255, round(v * 0.9 + 14))) for v in sampled)
+                direction = -1 if layer else 1
+                strokes.line(
+                    (px, py, px + direction * span, py - max(1, span // 3)),
+                    fill=wax,
+                    width=thickness,
+                )
+    return _on(ground, paper_texture(image.size, seed + 151, paper * 0.8))
+
+
+def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Limit ink colours and print a separate, slightly misregistered halftone plate."""
+
+    flat = image.quantize(colors=6, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    flat_rgb = flat.convert("RGB")
+    sheet = Image.new("RGB", image.size, (251, 248, 239))
+    printed = Image.blend(flat_rgb, sheet, 0.10)
+    gray = ImageOps.grayscale(flat_rgb)
+    dots = Image.new("L", image.size, 0)
+    draw = ImageDraw.Draw(dots)
+    pitch = max(5, round(11 * scale))
+    jitter = seed % 3 - 1
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            px = min(image.width - 1, max(0, x + pitch // 2 + jitter))
+            py = min(image.height - 1, max(0, y + pitch // 2 - jitter))
+            level = cast(int, gray.getpixel((px, py)))
+            darkness = (255 - level) / 255
+            if darkness < 0.12:
+                continue
+            radius = max(0.65, pitch * 0.42 * math.sqrt(darkness))
+            draw.ellipse((px - radius, py - radius, px + radius, py + radius), fill=175)
+    ink = Image.new("RGB", image.size, (35, 39, 48))
+    printed = Image.composite(ink, printed, dots)
+
+    # The second ink plate is shifted without wraparound, so the opposite
+    # edges of the page cannot bleed together.
+    edges = value_edges(flat_rgb, max(1.0, scale), 40)
+    shifted = Image.new("L", image.size, 0)
+    shifted.paste(edges, (1, 0))
+    fringe = ImageChops.subtract(shifted, edges).point(lambda v: v * 2 // 5)
+    printed = Image.composite(Image.new("RGB", image.size, (183, 64, 81)), printed, fringe)
+    return _on(printed, paper_texture(image.size, seed + 157, paper * 0.45))
+
+
+def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Assemble region-shaped paper silhouettes rather than a regular tile grid."""
+
+    # Median-cut produces coherent colour regions; each index becomes one
+    # paper shape with its own shadow. No stochastic palette training is used.
+    indexed = image.quantize(colors=7, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
+    palette = indexed.getpalette()
+    if palette is None:
+        raise ValueError("quantized image has no palette")
+    counts = indexed.histogram()
+    # Large background papers go down first; smaller shapes layer on top.
+    layers = sorted((i for i, count in enumerate(counts) if count), key=lambda i: -counts[i])
+    page = Image.new("RGB", image.size, (245, 240, 226))
+    shadow = Image.new("RGB", image.size, (80, 77, 74))
+    offset = max(1, round(2 * scale))
+    for index in layers:
+        mask = indexed.point([255 if value == index else 0 for value in range(256)], mode="L")
+        # A one-pixel clearance makes adjacent paper layers legible.
+        if min(image.size) >= 3:
+            mask = mask.filter(ImageFilter.MinFilter(3))
+        shadow_mask = Image.new("L", image.size, 0)
+        shadow_mask.paste(mask, (offset, offset))
+        page = Image.composite(shadow, page, shadow_mask.point(lambda v: v // 3))
+        channels = palette[3 * index : 3 * index + 3]
+        colour = tuple(max(0, min(255, round(c * 0.91 + 15))) for c in channels)
+        patch = Image.new("RGB", image.size, colour)
+        page = Image.composite(patch, page, mask)
+    return _on(page, paper_texture(image.size, seed + 163, paper * 0.35))
 
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
