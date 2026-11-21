@@ -633,3 +633,18 @@ def test_woodcut_has_actual_exposed_gouges_inside_the_solid_shadow() -> None:
     assert min(values) < 55
     assert max(values) > 90
     assert sum(value > 110 for value in values) > 20
+
+
+def test_embroidery_layers_threads_and_keeps_exposed_weave() -> None:
+    source = Image.new("RGB", (144, 96), (35, 65, 115))
+    spec = {"preset": "embroidery", "paper": 0, "seed": 5}
+    first = apply_style(source, None, spec)
+    again = apply_style(source, None, spec)
+    other = apply_style(source, None, {**spec, "seed": 6})
+    assert first.tobytes() == again.tobytes()
+    assert first.tobytes() != other.tobytes()
+    assert len(set(first.getdata())) > 4
+    # The fabric remains visible between satin stitches.
+    pixels = list(first.getdata())
+    assert any(r > 200 and g > 195 and b > 175 for r, g, b in pixels)
+    assert any(b > r and b > g for r, g, b in pixels)
