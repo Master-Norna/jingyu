@@ -910,10 +910,9 @@ def _crayon_wax_masks(
     adhesion = tooth.point(lambda pixel: min(255, max(0, (pixel - 191) * 5)))
     # Almost-white areas receive little or no wax: preserve blank backgrounds.
     paintable = value.point(lambda pixel: min(255, max(0, (251 - pixel) * 12)))
-    return tuple(
-        ImageChops.multiply(ImageChops.multiply(mask, adhesion), paintable)
-        for mask in masks
-    )  # type: ignore[return-value]
+    under = ImageChops.multiply(ImageChops.multiply(masks[0], adhesion), paintable)
+    over = ImageChops.multiply(ImageChops.multiply(masks[1], adhesion), paintable)
+    return under, over
 
 
 def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
@@ -923,7 +922,9 @@ def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     under, over = _crayon_wax_masks(image, scale, seed)
     # Each mark takes the colour at its destination pixel, so crossing a
     # boundary never paints one object's pigment onto another object.
-    first_wax = ImageEnhance.Color(image).enhance(1.12).point(lambda pixel: max(0, pixel - 10))
+    first_wax = ImageEnhance.Color(image).enhance(1.12).point(
+        lambda pixel: max(0, pixel - 10)
+    )
     second_wax = Image.blend(ImageEnhance.Color(image).enhance(1.08), sheet, 0.13)
     drawing = Image.composite(first_wax, sheet, under)
     drawing = Image.composite(second_wax, drawing, over)
