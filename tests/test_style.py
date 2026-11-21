@@ -174,3 +174,60 @@ def test_new_painting_presets_are_accepted_by_scene_validation() -> None:
         scene = minimal_scene()
         scene["render"]["style"] = {"preset": preset}
         assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
+
+
+@pytest.mark.parametrize("preset", ["pencil", "stippling", "gouache"])
+def test_broader_painting_presets_validate_as_scenes(preset: str) -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": preset, "seed": 17}
+    normalized = validate_scene(scene).require_valid()
+    assert normalized["render"]["style"]["preset"] == preset
+
+
+def test_new_style_families_are_visually_distinct() -> None:
+    source = _render()
+    images = [
+        apply_style(source, synthetic_mask(), {"preset": preset, "paper": 0})
+        for preset in ("pencil", "stippling", "gouache")
+    ]
+    assert len({image.tobytes() for image in images}) == 3
+    assert all(image.tobytes() != source.tobytes() for image in images)
+    pencil, stippling, gouache = images
+    assert all(max(pixel) - min(pixel) < 26 for pixel in pencil.getdata())
+    assert all(max(pixel) - min(pixel) < 26 for pixel in stippling.getdata())
+    assert any(max(pixel) - min(pixel) > 35 for pixel in gouache.getdata())
+
+
+def test_pencil_crosshatches_dark_regions_more_than_light_regions() -> None:
+    image = Image.new("RGB", (100, 60), (245, 245, 245))
+    ImageDraw.Draw(image).rectangle((50, 0, 99, 59), fill=(24, 24, 24))
+    result = apply_style(image, None, {"preset": "pencil", "paper": 0, "line_width": 0})
+    left = sum(sum(result.getpixel((x, y))) for y in range(8, 52) for x in range(8, 42))
+    right = sum(sum(result.getpixel((x, y))) for y in range(8, 52) for x in range(58, 92))
+    assert right < left * 0.75
+
+
+def test_stippling_has_spatial_dots_and_seeded_locations() -> None:
+    image = Image.new("RGB", (100, 60), (247, 247, 247))
+    ImageDraw.Draw(image).rectangle((50, 0, 99, 59), fill=(8, 8, 8))
+    options = {"preset": "stippling", "paper": 0}
+    first = apply_style(image, None, {**options, "seed": 11})
+    again = apply_style(image, None, {**options, "seed": 11})
+    different = apply_style(image, None, {**options, "seed": 12})
+    assert first.tobytes() == again.tobytes()
+    assert first.tobytes() != different.tobytes()
+    left = [first.getpixel((x, y))[0] for y in range(8, 52) for x in range(8, 42)]
+    right = [first.getpixel((x, y))[0] for y in range(8, 52) for x in range(58, 92)]
+    assert sum(v < 80 for v in right) > sum(v < 80 for v in left) + 50
+    assert any(v > 225 for v in right)  # exposed paper between discrete dots
+
+
+def test_gouache_keeps_colour_without_hard_cel_outlines() -> None:
+    source, ids = _render(), synthetic_mask()
+    gau = apply_style(source, ids, {"preset": "gouache", "paper": 0})
+    with_zero_lines = apply_style(source, None, {"preset": "gouache", "paper": 0, "line_width": 0})
+    assert gau.tobytes() == with_zero_lines.tobytes()
+    assert gau.getpixel((VASE_BOX[0] + 5, VASE_BOX[1] + 5))[2] > 100
+    assert gau.tobytes() != apply_style(source, ids, {"preset": "oil", "paper": 0}).tobytes()
