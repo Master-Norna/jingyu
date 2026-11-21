@@ -439,7 +439,6 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
     return _on(matte, paper_texture(image.size, seed + 83, paper * 0.45))
 
 
-
 def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
     """Smudge coloured chalk beneath short directional marks on toothy paper."""
 
@@ -455,9 +454,7 @@ def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     marks = ImageDraw.Draw(base)
     for y in range(0, image.height, pitch):
         for x in range(0, image.width, pitch):
-            key = (
-                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 101) * 83492791
-            ) & 0xFFFFFFFF
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 101) * 83492791) & 0xFFFFFFFF
             px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
             py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
             sample = cast(tuple[int, int, int], image.getpixel((px, py)))
@@ -532,17 +529,14 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
             cx = min(image.width - 1, x + pitch // 2)
             cy = min(image.height - 1, y + pitch // 2)
             colour = cast(tuple[int, int, int], image.getpixel((cx, cy)))
-            key = (
-                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 127) * 83492791
-            ) & 0xFFFFFFFF
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 127) * 83492791) & 0xFFFFFFFF
             variation = ((key >> 8) % 13 - 6) * 0.75
             tile_colour = tuple(max(0, min(255, round(c + variation))) for c in colour)
             # Corners vary *inside* the grout clearance, never across neighbouring tiles.
             top = (key >> 16) & 1
             bottom = (key >> 18) & 1
             draw.polygon(
-                [(x0 + top, y0), (x1, y0 + (1 - top)),
-                 (x1 - bottom, y1), (x0, y1 - (1 - bottom))],
+                [(x0 + top, y0), (x1, y0 + (1 - top)), (x1 - bottom, y1), (x0, y1 - (1 - bottom))],
                 fill=tile_colour,
             )
     return _on(background, paper_texture(image.size, seed + 131, paper * 0.18))
