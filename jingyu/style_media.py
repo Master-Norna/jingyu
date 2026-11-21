@@ -85,9 +85,7 @@ def embroidery(image: Image.Image, scale: float, paper: Image.Image, seed: int) 
 
     for row, y in enumerate(range(0, height, stride)):
         for x in range(0, width, pitch):
-            key = (
-                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 199) * 83492791
-            ) & 0xFFFFFFFF
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 199) * 83492791) & 0xFFFFFFFF
             cx = min(width - 1, x + pitch // 2)
             cy = min(height - 1, y + stride // 2)
             colour = cast(tuple[int, int, int], flat.getpixel((cx, cy)))
