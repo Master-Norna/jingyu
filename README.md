@@ -88,6 +88,31 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 }
 ```
 
+MCP 与 CLI 共用同一份画风定义，不需要另外维护第二份风格列表。更新代码并重新安装
+`python -m pip install -e ".[mcp]"` 后，请**重启 MCP 客户端连接或服务进程**，确保使用的是
+新版本。调用 `get_guide` 时会在 `style_presets` 字段看到完整画法目录，
+`get_scene_schema` 的 `render.style.preset` 枚举与它保持一致。
+
+**画法验收（MCP）：** 先调用 `get_scene_schema` 取 `example`，再把它作为 `scene`
+传给 `edit_scene`，用下面的操作设置画法并写入工作区：
+
+```json
+{
+  "operations": [
+    {"op": "add", "path": "/render/style",
+     "value": {"preset": "papercut", "strength": 1, "paper": 0.35, "seed": 17}}
+  ],
+  "save_as": "scenes/papercut-review.json"
+}
+```
+
+随后调用 `render_scene`，参数为
+`{"scene_path":"scenes/papercut-review.json","quality":"preview"}`；
+使用返回的 `candidate_id` 调用 `view_candidate`，分别设置
+`{"view":"full"}`（画风结果）和 `{"view":"render"}`（未处理照片）进行对比。
+更换 `preset` 后，保持相同场景、光照和 `seed`，才能比较媒材本身差异。
+`paper` 控制表面额外纹理；渲染仍需要可用的 Blender 运行时。
+
 模型先调用 `get_guide`，按其中的流程工作：写下一句话的意图，`list_generators` 查原语
 目录，写场景，`validate_scene`；知道要什么效果时用 `frame_subject` 求机位、`aim_sun` 求光；
 `render_scene` 预览，`view_candidate` 看图，`locate_in_candidate` 定位，`edit_scene` 按 id
