@@ -105,7 +105,6 @@ def render_id_mask(scene: Any, objects: list[BuiltObject], filepath: Path) -> di
     }
 
 
-
 def render_normal_mask(scene: Any, filepath: Path) -> None:
     """Render camera-space shading normals as RGBA over transparent background.
 

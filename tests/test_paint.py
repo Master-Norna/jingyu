@@ -457,8 +457,13 @@ def test_surface_paint_is_repeatable_and_local_to_object() -> None:
     ImageDraw.Draw(ids).ellipse((20, 20, 76, 76), fill=(0, 0, 1, 255))
     normals = Image.new("RGBA", (96, 96), (255, 128, 128, 255))
     action = {
-        "op": "hatch", "flow": "surface", "target": {"object": "vase"},
-        "angle": 0, "spacing": 7, "color": "#ffffff", "strength": 1,
+        "op": "hatch",
+        "flow": "surface",
+        "target": {"object": "vase"},
+        "angle": 0,
+        "spacing": 7,
+        "color": "#ffffff",
+        "strength": 1,
     }
     mapping = {"objects": {"1": {"object": "vase"}}}
     first = apply_paint(image, [action], id_mask=ids, id_map=mapping, normal_mask=normals)
@@ -479,7 +484,10 @@ def test_surface_requires_normal_pass_and_keeps_parent(
     action = {"op": "hatch", "flow": "surface", "target": {"object": "vase"}}
     painted = paint_candidate(workspace, source.id, [action])
     assert painted.receipt["paint"]["operations"][0]["flow"] == "surface"
-    assert painted.file("normal_mask.png").read_bytes() == source.file("normal_mask.png").read_bytes()
+    assert (
+        painted.file("normal_mask.png").read_bytes()
+        == source.file("normal_mask.png").read_bytes()
+    )
     assert CandidateStore(workspace).verify(painted) == []
     assert CandidateStore(workspace).verify(source) == []
 

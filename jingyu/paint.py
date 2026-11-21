@@ -334,7 +334,6 @@ def _tone_tangent(
     return tx, ty
 
 
-
 def _surface_tangent(
     normals: Image.Image, x: float, y: float, previous: tuple[float, float]
 ) -> tuple[float, float]:
