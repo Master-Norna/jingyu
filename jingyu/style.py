@@ -150,6 +150,18 @@ def value_edges(image: Image.Image, width: float, threshold: int) -> Image.Image
     return _thicken(found, width * 0.7)
 
 
+
+def _colour_edges(image: Image.Image, width: float, threshold: int) -> Image.Image:
+    """Detect pigment boundaries even when neighbouring hues share luminance."""
+
+    softened = image.filter(ImageFilter.GaussianBlur(max(0.35, 0.5 * width)))
+    channels = softened.split()
+    edges = Image.new("L", image.size, 0)
+    for channel in channels:
+        edges = ImageChops.lighter(edges, channel.filter(ImageFilter.FIND_EDGES))
+    return _thicken(edges.point(lambda value: 255 if value > threshold else 0), width)
+
+
 def _thicken(lines: Image.Image, width: float) -> Image.Image:
     size = max(1, round(width))
     if size > 1:
@@ -189,18 +201,26 @@ def _noise_tile(size: int, seed: int, feature: float) -> Image.Image:
 
 
 def paper_texture(size: tuple[int, int], seed: int, amount: float) -> Image.Image:
-    """Paper: fine fibres and a soft mottle, as a multiplier image ("L", 255 = none)."""
+    """Paper grain has fixed pixel scale, regardless of the canvas dimensions.
 
+    Fine fibres and broad mottling share image-space coordinates; changing the
+    canvas size never stretches the texture already visible in a crop.
+    """
+
+    if amount <= 0:
+        return Image.new("L", size, 255)
     width, height = size
-    grain = _noise_tile(256, seed, 1.6)
+    fibres = Image.blend(
+        _noise_tile(256, seed, 1.6),
+        _noise_tile(256, seed + 1, 8.0),
+        0.5,
+    )
     tiled = Image.new("L", size)
     for y in range(0, height, 256):
         for x in range(0, width, 256):
-            tiled.paste(grain, (x, y))
-    mottle = _noise_tile(64, seed + 1, 8.0).resize(size, Image.Resampling.BICUBIC)
-    fibres = Image.blend(tiled, mottle, 0.5)
-    low = int(255 - 40 * amount)
-    return fibres.point(lambda v: low + (255 - low) * v // 255)
+            tiled.paste(fibres, (x, y))
+    low = max(0, min(255, round(255 - 40 * amount)))
+    return tiled.point(lambda v: low + (255 - low) * v // 255)
 
 
 def canvas_texture(size: tuple[int, int], amount: float, scale: float) -> Image.Image:
@@ -295,20 +315,63 @@ def _ink(
 def _watercolor(
     image: Image.Image, id_mask: Image.Image | None, scale: float, paper: float, seed: int
 ) -> Image.Image:
-    wash = flatten(image.filter(ImageFilter.GaussianBlur(2.5 * scale)), 6, 0.6)
+    wash = flatten(image.filter(ImageFilter.GaussianBlur(max(0.55, 2.5 * scale))), 6, 0.6)
     wash = ImageEnhance.Color(wash).enhance(0.85)
     wash = Image.blend(wash, Image.new("RGB", image.size, (250, 247, 240)), 0.18)
-    rims = outlines(id_mask, image.size, 2.5 * scale).filter(ImageFilter.GaussianBlur(2.0 * scale))
-    darker = ImageEnhance.Brightness(wash).enhance(0.72)
-    edged = Image.composite(darker, wash, rims.point(lambda v: v * 3 // 5))
+
+    # Pigment also settles along internal colour boundaries, not only ID masks.
+    # This catches adjacent hues with equal luminance (e.g. red and green).
+    width = max(0.8, 2.5 * scale)
+    rims = ImageChops.lighter(
+        outlines(id_mask, image.size, width),
+        _colour_edges(image, width, 24),
+    )
+    pools = rims.filter(ImageFilter.GaussianBlur(max(0.6, 1.5 * scale)))
+    darker = ImageEnhance.Brightness(wash).enhance(0.70)
+    edged = Image.composite(darker, wash, pools.point(lambda value: value * 3 // 5))
     grain = paper_texture(image.size, seed + 7, 0.6 + 0.4 * paper)
     return _on(edged, grain)
 
 
 def _oil(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Keep broad forms, then place small strokes tangent to local value changes."""
+
     painted = kuwahara(image, max(2, round(5 * scale)))
     painted = kuwahara(painted, max(1, round(3 * scale)))
     painted = ImageEnhance.Color(painted).enhance(1.15)
+    source = painted.copy()
+    value = ImageOps.grayscale(image)
+    draw = ImageDraw.Draw(painted)
+    pitch = max(5, round(14 * scale))
+    length = max(3, round(9 * scale))
+    thickness = max(1, round(2.1 * scale))
+    for y in range(pitch // 2, image.height, pitch):
+        for x in range(pitch // 2, image.width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 233) * 83492791) & 0xFFFFFFFF
+            px = min(image.width - 1, max(0, x + (key >> 8) % pitch - pitch // 2))
+            py = min(image.height - 1, max(0, y + (key >> 16) % pitch - pitch // 2))
+            left = cast(int, value.getpixel((max(0, px - 2), py)))
+            right = cast(int, value.getpixel((min(image.width - 1, px + 2), py)))
+            above = cast(int, value.getpixel((px, max(0, py - 2))))
+            below = cast(int, value.getpixel((px, min(image.height - 1, py + 2))))
+            dx, dy = float(above - below), float(right - left)
+            norm = math.hypot(dx, dy)
+            if norm < 4:
+                dx, dy, norm = 1.0, (key % 5 - 2) * 0.16, 1.0
+            radius = length * (0.35 + 0.15 * ((key >> 24) & 3)) / norm
+            x0, y0 = px - dx * radius, py - dy * radius
+            x1, y1 = px + dx * radius, py + dy * radius
+            color = cast(tuple[int, int, int], source.getpixel((px, py)))
+            edge_colors = (
+                cast(tuple[int, int, int], image.getpixel((min(image.width - 1, max(0, round(x0))), min(image.height - 1, max(0, round(y0))))),
+                cast(tuple[int, int, int], image.getpixel((min(image.width - 1, max(0, round(x1))), min(image.height - 1, max(0, round(y1))))),
+            )
+            if any(max(abs(a - b) for a, b in zip(edge, color)) > 65 for edge in edge_colors):
+                continue  # Do not drag a coloured stroke across an object edge.
+            body = tuple(max(0, channel - 10) for channel in color)
+            ridge = tuple(min(255, channel + 18) for channel in color)
+            draw.line((x0, y0, x1, y1), fill=body, width=thickness + 1)
+            draw.line((x0, y0 - 1, x1, y1 - 1), fill=ridge, width=thickness)
     return _on(painted, canvas_texture(image.size, 0.4 + 0.6 * paper, scale))
 
 
@@ -556,7 +619,13 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
                 continue
             cx = min(image.width - 1, x + pitch // 2)
             cy = min(image.height - 1, y + pitch // 2)
-            colour = cast(tuple[int, int, int], image.getpixel((cx, cy)))
+            # Average each tile footprint: a single centre pixel aliases small objects.
+            colour = cast(
+                tuple[int, int, int],
+                image.crop(
+                    (x, y, min(image.width, x + pitch), min(image.height, y + pitch))
+                ).resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)),
+            )
             key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 127) * 83492791) & 0xFFFFFFFF
             variation = ((key >> 8) % 13 - 6) * 0.75
             tile_colour = tuple(max(0, min(255, round(c + variation))) for c in colour)

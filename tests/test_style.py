@@ -7,9 +7,9 @@ from itertools import pairwise
 
 import pytest
 from helpers import CRATE_BOX, VASE_BOX, synthetic_mask
-from PIL import Image, ImageDraw
+from PIL import Image, ImageChops, ImageDraw
 
-from jingyu.style import PRESETS, apply_style, flatten, kuwahara, outlines
+from jingyu.style import PRESETS, _colour_edges, apply_style, flatten, kuwahara, outlines, paper_texture
 
 
 def _render() -> Image.Image:
@@ -506,4 +506,62 @@ def test_material_media_preserve_alpha_strength_and_source(preset: str) -> None:
     assert full.tobytes() != half.tobytes()
     assert full.getchannel("A").tobytes() == alpha.tobytes()
     assert half.getchannel("A").tobytes() == alpha.tobytes()
+    assert source.tobytes() == before
+
+
+def test_paper_texture_is_neutral_when_disabled_and_independent_of_canvas_size() -> None:
+    assert paper_texture((130, 85), 17, 0).getextrema() == (255, 255)
+    small = paper_texture((130, 85), 17, 0.9)
+    large = paper_texture((270, 160), 17, 0.9)
+    cropped = large.crop((0, 0, 130, 85))
+    assert ImageChops.difference(small, cropped).getbbox() is None
+    assert small.tobytes() != paper_texture((130, 85), 18, 0.9).tobytes()
+
+
+def test_watercolour_can_detect_equal_luminance_different_hues() -> None:
+    source = Image.new("RGB", (120, 80), (120, 60, 60))
+    ImageDraw.Draw(source).rectangle((60, 0, 119, 79), fill=(40, 101, 50))
+    edge = _colour_edges(source, 1, 20)
+    assert edge.getpixel((60, 40)) > 50
+    assert edge.getpixel((22, 40)) == 0
+    styled = apply_style(source, None, {"preset": "watercolor", "paper": 0})
+    near = sum(styled.getpixel((59, 40)))
+    far = sum(styled.getpixel((38, 40)))
+    assert near < far  # Pigment collects at the chromatic boundary.
+
+
+def test_oil_strokes_depend_on_seed_and_preserve_regions() -> None:
+    source = Image.new("RGB", (140, 90), (40, 85, 170))
+    ImageDraw.Draw(source).rectangle((70, 0, 139, 89), fill=(200, 60, 35))
+    spec = {"preset": "oil", "paper": 0, "seed": 17}
+    first = apply_style(source, None, spec)
+    repeated = apply_style(source, None, spec)
+    different = apply_style(source, None, {**spec, "seed": 18})
+    assert first.tobytes() == repeated.tobytes()
+    assert first.tobytes() != different.tobytes()
+    assert first.getpixel((25, 45))[2] > first.getpixel((25, 45))[0]
+    assert first.getpixel((110, 45))[0] > first.getpixel((110, 45))[2]
+    assert len(set(first.crop((12, 12, 55, 78)).get_flattened_data())) > 2
+
+
+def test_mosaic_samples_the_tile_area_not_only_its_centre() -> None:
+    source = Image.new("RGB", (84, 48), (25, 65, 160))
+    ImageDraw.Draw(source).rectangle((0, 0, 2, 47), fill=(220, 80, 30))
+    output = apply_style(source, None, {"preset": "mosaic", "paper": 0, "seed": 2})
+    sample = output.getpixel((3, 3))
+    assert sample[0] > 65  # The three-pixel stripe contributes to the full tile.
+
+
+@pytest.mark.parametrize("preset", [p for p in PRESETS if p != "none"])
+def test_all_media_preserve_rgba_source_and_are_repeatable(preset: str) -> None:
+    source = _render().convert("RGBA")
+    alpha = Image.new("L", source.size, 255)
+    ImageDraw.Draw(alpha).rectangle((2, 2, 13, 24), fill=0)
+    source.putalpha(alpha)
+    before = source.tobytes()
+    spec = {"preset": preset, "seed": 37, "paper": 0.65}
+    a = apply_style(source, synthetic_mask(), spec)
+    b = apply_style(source, synthetic_mask(), spec)
+    assert a.tobytes() == b.tobytes()
+    assert a.getchannel("A").tobytes() == alpha.tobytes()
     assert source.tobytes() == before
