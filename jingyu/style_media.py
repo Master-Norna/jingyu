@@ -51,36 +51,56 @@ def frottage(image: Image.Image, scale: float, paper: Image.Image, seed: int) ->
 
 
 def embroidery(image: Image.Image, scale: float, paper: Image.Image, seed: int) -> Image.Image:
-    """Form the colour image from separate diagonal thread stitches on cloth."""
+    """Layer overlapping satin stitches, with distinct thread and fabric texture.
 
-    quantized = image.quantize(colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    flat = quantized.convert("RGB")
+    Stitches follow alternating rows rather than a single diagonal per grid cell.
+    A darker under-thread and displaced highlight give each strand some volume.
+    The source colour is sampled per stitch, preserving small colour regions.
+    """
+
+    flat = image.quantize(colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE).convert("RGB")
     fabric = Image.new("RGB", image.size, (231, 223, 204))
     draw = ImageDraw.Draw(fabric)
-    pitch = max(5, round(15 * scale))
-    width = max(1, round(2.2 * scale))
-    for y in range(0, image.height, pitch):
-        for x in range(0, image.width, pitch):
-            cx = min(image.width - 1, x + pitch // 2)
-            cy = min(image.height - 1, y + pitch // 2)
-            index = cast(int, quantized.getpixel((cx, cy)))
+    pitch = max(5, round(12 * scale))
+    stitch_width = max(1, round(2.1 * scale))
+    stride = max(2, pitch // 3)
+    width, height = image.size
+
+    # Fine, subtle warp and weft remain visible in uncovered gaps.
+    weave = ImageDraw.Draw(fabric)
+    for y in range(0, height, max(3, pitch // 2)):
+        weave.line((0, y, width - 1, y), fill=(224, 215, 196), width=1)
+    for x in range(0, width, max(3, pitch // 2)):
+        weave.line((x, 0, x, height - 1), fill=(226, 218, 199), width=1)
+
+    # Nearby strands overlap like satin stitching; orientation changes by row,
+    # while the deterministic seed affects only the small displacement.
+    for row, y in enumerate(range(0, height, stride)):
+        for x in range(0, width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 199) * 83492791) & 0xFFFFFFFF
+            cx = min(width - 1, x + pitch // 2)
+            cy = min(height - 1, y + stride // 2)
             colour = cast(tuple[int, int, int], flat.getpixel((cx, cy)))
-            x0, y0 = x + 1, y + 1
-            x1 = min(image.width - 1, x + pitch - 2)
-            y1 = min(image.height - 1, y + pitch - 2)
-            if x1 <= x0 or y1 <= y0:
+            # Leave the lightest areas mostly as exposed cloth.
+            if sum(colour) >= 705 and (key & 3) != 0:
                 continue
-            if (index + seed) & 1:
-                segment = (x0, y1, x1, y0)
-                highlight = (x0, y1 - 1, x1, max(0, y0 - 1))
+            shift = ((key >> 12) % 3) - 1
+            left = max(0, x + shift)
+            right = min(width - 1, x + pitch - 2 + shift)
+            if right <= left:
+                continue
+            top = max(0, y - stride // 2)
+            bottom = min(height - 1, y + stride + stride // 2)
+            if row & 1:
+                segment = (left, bottom, right, top)
             else:
-                segment = (x0, y0, x1, y1)
-                highlight = (x0, y0 - 1, x1, max(0, y1 - 1))
-            dark = tuple(max(0, value * 4 // 5) for value in colour)
-            bright = tuple(min(255, value + 34) for value in colour)
-            draw.line(segment, fill=dark, width=width + 1)
-            draw.line(segment, fill=colour, width=width)
-            draw.line(highlight, fill=bright, width=1)
+                segment = (left, top, right, bottom)
+            dark = tuple(max(0, value * 3 // 4) for value in colour)
+            bright = tuple(min(255, value + 32) for value in colour)
+            draw.line(segment, fill=dark, width=stitch_width + 2)
+            draw.line(segment, fill=colour, width=stitch_width)
+            x0, y0, x1, y1 = segment
+            draw.line((x0, max(0, y0 - 1), x1, max(0, y1 - 1)), fill=bright, width=1)
     return _on(fabric, paper)
 
 
