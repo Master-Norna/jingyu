@@ -697,33 +697,91 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
     return _on(painted, paper_texture(image.size, seed + 83, paper * 0.35))
 
 
+def _pastel_strokes(
+    value: Image.Image, scale: float, seed: int
+) -> tuple[Image.Image, Image.Image]:
+    """Build separate contour-following rub and broken chalk deposition masks."""
+
+    rub = Image.new("L", value.size, 0)
+    chalk = Image.new("L", value.size, 0)
+    rubbing = ImageDraw.Draw(rub)
+    depositing = ImageDraw.Draw(chalk)
+    pitch = max(5, round(13 * scale))
+    span = max(3, round(11 * scale))
+    thickness = max(2, round(3.6 * scale))
+    width, height = value.size
+
+    for y in range(0, height, pitch):
+        for x in range(0, width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 101) * 83492791) & 0xFFFFFFFF
+            px = min(width - 1, x + (key >> 8) % min(pitch, width - x))
+            py = min(height - 1, y + (key >> 16) % min(pitch, height - y))
+            if cast(int, value.getpixel((px, py))) >= 248:
+                continue
+
+            vx, vy = local_tangent(value, px, py, max(1, round(3 * scale)))
+            bend = (((key >> 24) & 7) - 3) * 0.045
+            dx, dy = vx - bend * vy, vy + bend * vx
+            reach = span * (0.36 + ((key >> 27) & 3) * 0.09)
+            x0, y0 = px - dx * reach, py - dy * reach
+            x1, y1 = px + dx * reach, py + dy * reach
+
+            rubbing.line(
+                (x0, y0, x1, y1),
+                fill=110 + ((key >> 16) & 63),
+                width=thickness + 2,
+            )
+            # Dry chalk skips parts of a broad smudge. The missing sections
+            # are actual uncovered gaps rather than extra image noise.
+            if (key & 7) != 0:
+                depositing.line(
+                    (x0, y0, px - dx * reach * 0.17, py - dy * reach * 0.17),
+                    fill=185 + ((key >> 19) & 63),
+                    width=max(1, thickness // 2),
+                )
+            if (key & 3) != 0:
+                depositing.line(
+                    (px + dx * reach * 0.18, py + dy * reach * 0.18, x1, y1),
+                    fill=170 + ((key >> 21) & 63),
+                    width=max(1, thickness // 2),
+                )
+    return rub, chalk
+
+
 def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Smudge coloured chalk beneath short directional marks on toothy paper."""
+    """Layer soft contour smudges and broken chalk on toothy, colour-safe paper."""
 
     smudged = kuwahara(image, max(2, round(6 * scale)))
     softened = smudged.filter(ImageFilter.GaussianBlur(max(0.5, 1.8 * scale)))
     base = Image.blend(smudged, softened, 0.55)
-    base = ImageEnhance.Color(base).enhance(1.25)
-    base = Image.blend(base, Image.new("RGB", image.size, (253, 246, 235)), 0.07)
+    base = ImageEnhance.Color(base).enhance(1.22)
+    cream = Image.new("RGB", image.size, (253, 246, 235))
+    base = Image.blend(base, cream, 0.07)
 
-    pitch = max(5, round(12 * scale))
-    span = max(2, round(7 * scale))
-    width = max(1, round(2 * scale))
-    marks = ImageDraw.Draw(base)
-    for y in range(0, image.height, pitch):
-        for x in range(0, image.width, pitch):
-            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 101) * 83492791) & 0xFFFFFFFF
-            px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
-            py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
-            sample = cast(tuple[int, int, int], image.getpixel((px, py)))
-            chalk = tuple(min(255, round(channel * 0.88 + 237 * 0.12)) for channel in sample)
-            direction = -1 if key & 1 else 1
-            marks.line(
-                (px, py, px + direction * span, py - max(1, span // 3)),
-                fill=chalk,
-                width=width,
-            )
-    return _on(base, paper_texture(image.size, seed + 107, paper * 0.9))
+    rub, chalk = _pastel_strokes(ImageOps.grayscale(image), scale, seed)
+    # Powder binds to the paper tooth unevenly. This fixed internal grain
+    # remains even when the optional final paper texture is disabled.
+    tooth = paper_texture(image.size, seed + 197, 2.15)
+    rub = ImageChops.multiply(
+        rub.filter(ImageFilter.GaussianBlur(max(0.35, 0.75 * scale))), tooth
+    )
+    chalk = ImageChops.multiply(chalk, tooth)
+
+    muted = ImageEnhance.Brightness(base).enhance(0.88)
+    base = Image.composite(muted, base, rub)
+    # Calculate chalk colour at the destination, not from a stroke centre:
+    # neighbouring differently coloured objects cannot exchange pigments.
+    coloured_powder = Image.blend(
+        ImageEnhance.Color(image).enhance(1.08), cream, 0.16
+    )
+    painted = Image.composite(coloured_powder, base, chalk)
+
+    # Restore the local source hue on sharp seams where soft blending might
+    # otherwise mix adjacent colours; never draw a cartoon-black outline.
+    seams = _colour_edges(image, max(0.9, 1.4 * scale), 24)
+    repaired = Image.blend(painted, image, 0.78)
+    painted = Image.composite(repaired, painted, seams)
+    return _on(painted, paper_texture(image.size, seed + 107, paper * 0.65))
 
 
 def _etching(
