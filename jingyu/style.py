@@ -551,7 +551,6 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     return _on(background, paper_texture(image.size, seed + 131, paper * 0.18))
 
 
-
 def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
     """Lay short waxy coloured marks with unpainted paper between strokes."""
 
