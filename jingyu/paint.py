@@ -185,8 +185,7 @@ def _target_mask(
     indexes = [
         int(index)
         for index, entry in id_map["objects"].items()
-        if entry["object"] == object_id
-        and (part_id is None or entry.get("part") == part_id)
+        if entry["object"] == object_id and (part_id is None or entry.get("part") == part_id)
     ]
     if not indexes:
         raise JingyuError(
@@ -210,18 +209,14 @@ def _opacity(mask: Image.Image, strength: float) -> Image.Image:
     return mask.point(lambda value: round(value * strength))
 
 
-def _composite(
-    image: Image.Image, mask: Image.Image, color: str, strength: float
-) -> Image.Image:
+def _composite(image: Image.Image, mask: Image.Image, color: str, strength: float) -> Image.Image:
     if strength <= 0 or mask.getbbox() is None:
         return image
     tint = Image.new("RGB", image.size, color)
     return Image.composite(tint, image, _opacity(mask, strength))
 
 
-def _wash(
-    image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
-) -> Image.Image:
+def _wash(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
     return _composite(
         image,
         target,
@@ -230,9 +225,7 @@ def _wash(
     )
 
 
-def _hatch(
-    image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
-) -> Image.Image:
+def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
     width = float(operation.get("width", 1.5))
     strength = float(operation.get("strength", 0.65))
     if width <= 0 or strength <= 0:
@@ -258,9 +251,7 @@ def _hatch(
     return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
 
 
-def _edge_ink(
-    image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
-) -> Image.Image:
+def _edge_ink(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
     width = float(operation.get("width", 1.5))
     if width <= 0:
         return image
