@@ -652,7 +652,6 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
     return _on(page, paper_texture(image.size, seed + 163, paper * 0.35))
 
 
-
 def _sumi(
     image: Image.Image,
     id_mask: Image.Image | None,
