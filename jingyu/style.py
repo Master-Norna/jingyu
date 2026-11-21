@@ -448,8 +448,6 @@ def _woodcut(
     return _on(pressed, paper_texture(image.size, seed + 41, paper * 0.55))
 
 
-
-
 def _pencil(
     image: Image.Image,
     id_mask: Image.Image | None,
@@ -484,8 +482,6 @@ def _pencil(
     page = Image.new("RGB", image.size, (249, 247, 240))
     dark = Image.new("RGB", image.size, (36, 35, 37))
     return Image.composite(dark, page, graphite)
-
-
 
 
 def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
@@ -577,9 +573,7 @@ def _etching(
         shade.point(lambda v: min(255, max(0, (v - 20) * 3))),
     )
     secondary = ImageChops.multiply(
-        directional_hatch(
-            value, pitch + max(1, pitch // 3), fine, seed + 117, crossed=True
-        ),
+        directional_hatch(value, pitch + max(1, pitch // 3), fine, seed + 117, crossed=True),
         shade.point(lambda v: min(255, max(0, (v - 95) * 3))),
     )
     # Short rather than page-spanning deep incisions keep a visible paper grain.
@@ -598,8 +592,6 @@ def _etching(
     plate_ink = Image.new("RGB", image.size, (33, 32, 34))
     pressed = Image.composite(plate_ink, page, etched)
     return _on(pressed, paper_texture(image.size, seed + 113, paper * 0.65))
-
-
 
 
 def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
@@ -755,7 +747,11 @@ def _sumi(
             if weight < 95 or (key & 7) > weight // 34:
                 continue
             tapered_brush(
-                marks, value, px, py, length,
+                marks,
+                value,
+                px,
+                py,
+                length,
                 max(2, round(2.2 * scale)),
                 min(255, 188 + weight // 5 + ((key >> 19) & 31)),
                 key,
@@ -772,8 +768,6 @@ def _sumi(
         Image.composite(pigment, page, ink),
         paper_texture(image.size, seed + 179, paper * 0.65),
     )
-
-
 
 
 def _stainedglass(
