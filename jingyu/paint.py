@@ -12,7 +12,6 @@ import shutil
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from pathlib import Path
 from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
