@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
 from jingyu.errors import JingyuError
 from jingyu.paint import (
+    _draw_dry_stroke,
     _draw_tapered_stroke,
     _surface_tangent,
     _tone_tangent,
@@ -650,5 +651,117 @@ def test_tapered_curves_preserve_stroke_budget() -> None:
                 }
             ],
         )
+    assert exc.value.code == "tool.invalid_arguments"
+    assert "spacing" in (exc.value.hint or "")
+
+
+def test_dry_stroke_depletes_ink_and_has_coherent_gaps() -> None:
+    points = [(10.0 + 1.5 * index, 24.0) for index in range(100)]
+    wet = Image.new("L", (180, 48), 0)
+    dry = Image.new("L", wet.size, 0)
+    repeat = Image.new("L", wet.size, 0)
+    _draw_tapered_stroke(ImageDraw.Draw(wet), points, width=5, taper=0)
+    _draw_dry_stroke(ImageDraw.Draw(dry), points, width=5, taper=0, dryness=1)
+    _draw_dry_stroke(ImageDraw.Draw(repeat), points, width=5, taper=0, dryness=1)
+    assert dry.tobytes() == repeat.tobytes()
+    assert 0 < dry.getpixel((150, 24)) < dry.getpixel((10, 24))
+    assert any(
+        wet.getpixel((x, 24)) > 0 and dry.getpixel((x, 24)) == 0
+        for x in range(70, 156)
+    )
+
+
+@pytest.mark.parametrize("flow", ["tone", "contour", "surface"])
+def test_dryness_default_is_pixel_identical_and_local(flow: str) -> None:
+    image = Image.new("RGB", (96, 96), (35, 35, 35))
+    ids = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    ImageDraw.Draw(ids).ellipse((17, 17, 78, 78), fill=(0, 0, 1, 255))
+    normal = Image.new("RGBA", image.size, (255, 128, 128, 255))
+    mapping = {"objects": {"1": {"object": "vase"}}}
+    base = {
+        "op": "hatch",
+        "flow": flow,
+        "target": {"object": "vase"},
+        "angle": 0,
+        "spacing": 6,
+        "width": 5,
+        "strength": 1,
+        "color": "#ffffff",
+        "taper": 0.5,
+    }
+    kwargs = {"id_mask": ids, "id_map": mapping, "normal_mask": normal}
+    legacy = apply_paint(image, [base], **kwargs)
+    zero = apply_paint(image, [{**base, "dryness": 0}], **kwargs)
+    dry = apply_paint(image, [{**base, "dryness": 1}], **kwargs)
+    repeat = apply_paint(image, [{**base, "dryness": 1}], **kwargs)
+    assert legacy.tobytes() == zero.tobytes()
+    assert dry.tobytes() == repeat.tobytes()
+    assert dry.tobytes() != legacy.tobytes()
+    assert dry.tobytes() != image.tobytes()
+    for pixel in ((0, 0), (14, 48), (85, 48), (48, 90)):
+        assert dry.getpixel(pixel) == image.getpixel(pixel)
+
+
+def test_dryness_recipe_and_input_validation(make_candidate: CandidateFactory) -> None:
+    source = make_candidate(with_normal=True)
+    store = CandidateStore(make_candidate.workspace)
+    ctx = ToolContext(make_candidate.workspace)
+    action = {
+        "op": "hatch",
+        "flow": "surface",
+        "target": {"object": "vase"},
+        "dryness": 0.8,
+        "taper": 0.3,
+    }
+    source_bytes = source.image_path.read_bytes()
+    result = REGISTRY.invoke(
+        "paint_candidate",
+        {"candidate_id": source.id, "operations": [action], "return_image": False},
+        ctx,
+    )
+    derived = store.open(result.data["candidate_id"])
+    assert derived.receipt["paint"]["operations"][0]["dryness"] == 0.8
+    assert store.verify(source) == []
+    assert store.verify(derived) == []
+    assert source.image_path.read_bytes() == source_bytes
+
+    for invalid in (
+        {**action, "dryness": -0.1},
+        {**action, "dryness": 1.1},
+        {**action, "flow": "straight"},
+        {**action, "op": "wash"},
+        {**action, "flow": "straight", "dryness": 0},
+    ):
+        with pytest.raises(JingyuError) as exc:
+            REGISTRY.invoke(
+                "paint_candidate",
+                {"candidate_id": source.id, "operations": [invalid], "return_image": False},
+                ctx,
+            )
+        assert exc.value.code == "tool.invalid_arguments"
+
+    image = Image.new("RGB", (40, 40))
+    target = {"region": {"x0": 0, "y0": 0, "x1": 40, "y1": 40}}
+    for action in (
+        {"op": "wash", "target": target, "dryness": 0.5},
+        {"op": "hatch", "target": target, "flow": "straight", "dryness": 0.5},
+        {"op": "hatch", "target": target, "flow": "tone", "dryness": float("nan")},
+    ):
+        with pytest.raises(JingyuError) as exc:
+            apply_paint(image, [action])
+        assert exc.value.code == "tool.invalid_arguments"
+
+
+def test_dryness_keeps_dense_stroke_budget() -> None:
+    image = Image.new("RGB", (800, 800), (40, 40, 40))
+    action = {
+        "op": "hatch",
+        "flow": "tone",
+        "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
+        "spacing": 3,
+        "dryness": 1,
+    }
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(image, [action])
     assert exc.value.code == "tool.invalid_arguments"
     assert "spacing" in (exc.value.hint or "")
