@@ -230,17 +230,25 @@ def _wash(image: Image.Image, target: Image.Image, operation: Mapping[str, Any])
 def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
     width = float(operation.get("width", 1.5))
     strength = float(operation.get("strength", 0.65))
+    flow = operation.get("flow", "straight")
+    if flow == "contour" and "region" in operation["target"]:
+        raise JingyuError(
+            "tool.invalid_arguments",
+            "contour hatching requires an object or assembly part",
+            hint="Select an object or part with an exact ID pass; use tone for regions.",
+        )
+    if flow not in ("straight", "tone", "contour"):
+        raise JingyuError("tool.invalid_arguments", f"unknown hatch flow {flow!r}")
     if width <= 0 or strength <= 0:
         return image
     spacing = float(operation.get("spacing", 8))
     angle = math.radians(float(operation.get("angle", 45)))
-    flow = operation.get("flow", "straight")
     if flow == "straight":
         lines = _straight_hatch_lines(image.size, spacing, width, angle)
     elif flow == "tone":
         lines = _tone_hatch_lines(image, target, spacing, width, angle)
-    else:
-        raise JingyuError("tool.invalid_arguments", f"unknown hatch flow {flow!r}")
+    else:  # contour: use the selected object's silhouette, not the image's shadows.
+        lines = _tone_hatch_lines(image, target, spacing, width, angle, contour=True)
     darkness = ImageOps.invert(ImageOps.grayscale(image))
     stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
     return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
@@ -321,9 +329,15 @@ def _trace_tone(
 
 
 def _tone_hatch_lines(
-    image: Image.Image, target: Image.Image, spacing: float, width: float, angle: float
+    image: Image.Image,
+    target: Image.Image,
+    spacing: float,
+    width: float,
+    angle: float,
+    *,
+    contour: bool = False,
 ) -> Image.Image:
-    """Draw short strokes along tonal contours; no surface-normal pass needed."""
+    """Draw short strokes along tonal or object-silhouette contours."""
 
     lines = Image.new("L", image.size, 0)
     box = target.getbbox()
@@ -340,10 +354,14 @@ def _tone_hatch_lines(
             hint="Increase spacing or paint a smaller target.",
         )
 
-    gray = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(1.5))
+    shade = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(1.5))
+    # A blurred exact-ID selection provides a screen-space silhouette field:
+    # its gradients run across the boundary, not across shadows or texture.
+    # At its flat interior, _tone_tangent retains the user-supplied angle.
+    gray = target.filter(ImageFilter.GaussianBlur(max(1.5, spacing))) if contour else shade
     # Choose one real target pixel per tile, not a lattice centre that may miss
     # thin, diagonal or fragmented parts altogether.
-    eligible = ImageChops.multiply(target, gray.point(lambda value: 255 if value < 250 else 0))
+    eligible = ImageChops.multiply(target, shade.point(lambda value: 255 if value < 250 else 0))
     fallback = (math.cos(angle), math.sin(angle))
     draw = ImageDraw.Draw(lines)
     on_pixel = bytes((255,))

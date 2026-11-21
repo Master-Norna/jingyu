@@ -7,7 +7,7 @@ import math
 
 import pytest
 from helpers import SYNTHETIC_ID_MAP_OBJECTS, CandidateFactory
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
 from jingyu.errors import JingyuError
@@ -368,3 +368,72 @@ def test_tone_hatching_paints_a_one_pixel_diagonal_object() -> None:
             image, [operation], id_mask=mask, id_map={"objects": {"1": {"object": "sliver"}}}
         ).tobytes()
     )
+
+def test_contour_field_tracks_object_outline_not_luminance() -> None:
+    mask = Image.new("L", (96, 96), 0)
+    ImageDraw.Draw(mask).ellipse((20, 20, 76, 76), fill=255)
+    field = mask.filter(ImageFilter.GaussianBlur(7))
+    tangent = _tone_tangent(field, 75, 48, (1.0, 0.0))
+    assert abs(tangent[0]) < 0.1
+    assert abs(tangent[1]) > 0.9
+
+
+def test_contour_hatching_is_local_repeatable_and_distinct_from_tone() -> None:
+    image = Image.new("RGB", (96, 96))
+    image.putdata([(60 + x, 60 + x, 60 + x) for y in range(96) for x in range(96)])
+    ids = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    ImageDraw.Draw(ids).ellipse((20, 20, 76, 76), fill=(0, 0, 1, 255))
+    action = {
+        "op": "hatch",
+        "target": {"object": "sphere"},
+        "flow": "contour",
+        "angle": 0,
+        "spacing": 6,
+        "strength": 1,
+        "color": "#ffffff",
+    }
+    id_map = {"objects": {"1": {"object": "sphere"}}}
+    contour = apply_paint(image, [action], id_mask=ids, id_map=id_map)
+    again = apply_paint(image, [action], id_mask=ids, id_map=id_map)
+    tone = apply_paint(image, [{**action, "flow": "tone"}], id_mask=ids, id_map=id_map)
+    assert contour.tobytes() == again.tobytes()
+    assert contour.tobytes() != tone.tobytes()
+    assert contour.getpixel((48, 48)) != image.getpixel((48, 48)) or (
+        contour.tobytes() != image.tobytes()
+    )
+    for point in ((0, 0), (95, 48), (15, 48), (48, 80)):
+        assert contour.getpixel(point) == image.getpixel(point)
+
+
+def test_contour_flow_requires_an_object_mask_and_records_recipe(
+    make_candidate: CandidateFactory,
+) -> None:
+    source = make_candidate()
+    ctx = ToolContext(make_candidate.workspace)
+    action = {"op": "hatch", "target": {"object": "vase"}, "flow": "contour"}
+    child = REGISTRY.invoke(
+        "paint_candidate",
+        {"candidate_id": source.id, "operations": [action], "return_image": False},
+        ctx,
+    )
+    selected = CandidateStore(make_candidate.workspace).open(child.data["candidate_id"])
+    assert selected.receipt["paint"]["operations"][0]["flow"] == "contour"
+    assert CandidateStore(make_candidate.workspace).verify(selected) == []
+    assert CandidateStore(make_candidate.workspace).verify(source) == []
+
+    region = {"region": {"x0": 1, "y0": 1, "x1": 12, "y1": 12}}
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(Image.new("RGB", (20, 20)), [{**action, "target": region}])
+    assert exc.value.code == "tool.invalid_arguments"
+    with pytest.raises(JingyuError) as exc:
+        REGISTRY.invoke(
+            "paint_candidate",
+            {"candidate_id": source.id, "operations": [{**action, "target": region}]},
+            ctx,
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+
+    missing = make_candidate(with_mask=False)
+    with pytest.raises(JingyuError) as exc:
+        paint_candidate(make_candidate.workspace, missing.id, [action])
+    assert exc.value.code == "candidate.missing_pass"

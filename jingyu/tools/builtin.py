@@ -186,8 +186,10 @@ GUIDE_WORKFLOW = [
     "check_charter each picture against it: it answers with questions, not a score.",
     "For local painted changes after rendering, paint_candidate can wash, hatch or ink "
     "the selected object, part or rectangle without rerunning Blender. For hatch, use "
-    "flow 'tone' for short strokes following tonal contours, or the default 'straight' "
-    "for parallel lines. Review each immutable candidate against its source.",
+    "flow 'tone' for strokes following tonal contours, 'contour' to follow the "
+    "selected object's visible silhouette independently of shadows, or the default "
+    "'straight' for parallel lines. Contour requires an object/part ID target and "
+    "does not recover 3D surface normals. Review each immutable candidate.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -884,11 +886,13 @@ _PAINT_ACTION = {
             "description": "Hatch line spacing in pixels.",
         },
         "flow": {
-            "enum": ["straight", "tone"],
+            "enum": ["straight", "tone", "contour"],
             "default": "straight",
             "description": (
-                "Hatch direction: straight keeps parallel lines; tone bends short "
-                "strokes along luminance contours (not 3D surface normals)."
+                "Hatch direction: straight keeps parallel lines; tone follows "
+                "luminance contours; contour follows the exact-ID object's visible "
+                "silhouette, ignoring image shading (not 3D surface normals). "
+                "Contour requires an object or assembly-part target."
             ),
         },
         "width": {
@@ -903,7 +907,16 @@ _PAINT_ACTION = {
         {
             "if": {"properties": {"op": {"const": "hatch"}}, "required": ["op"]},
             "else": {"not": {"required": ["flow"]}},
-        }
+        },
+        {
+            "if": {
+                "properties": {"op": {"const": "hatch"}, "flow": {"const": "contour"}},
+                "required": ["op", "flow"],
+            },
+            "then": {
+                "properties": {"target": {"not": {"required": ["region"]}}},
+            },
+        },
     ],
 }
 
