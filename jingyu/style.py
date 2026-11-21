@@ -337,7 +337,6 @@ def _woodcut(
     return _on(pressed, paper_texture(image.size, seed + 41, paper * 0.55))
 
 
-
 def _diagonal_hatch(
     size: tuple[int, int], pitch: int, thickness: int, descending: bool
 ) -> Image.Image:
@@ -406,17 +405,13 @@ def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Ima
             )
             for mark in range(3):
                 key = (
-                    (x + 1) * 73856093
-                    ^ (y + 1) * 19349663
-                    ^ (seed + mark + 1) * 83492791
+                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + mark + 1) * 83492791
                 ) & 0xFFFFFFFF
                 if (key & 0xFFFF) / 65535 >= darkness / 255 * (0.92 - mark * 0.08):
                     continue
                 px = min(width - 1, x + (key >> 16) % min(pitch, width - x))
                 py = min(height - 1, y + (key >> 24) % min(pitch, height - y))
-                dots.ellipse(
-                    (px - radius, py - radius, px + radius, py + radius), fill=255
-                )
+                dots.ellipse((px - radius, py - radius, px + radius, py + radius), fill=255)
     pigment = Image.new("RGB", image.size, (32, 31, 35))
     page = Image.new("RGB", image.size, (250, 247, 239))
     drawn = Image.composite(pigment, page, ink)

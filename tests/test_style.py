@@ -227,9 +227,7 @@ def test_stippling_has_spatial_dots_and_seeded_locations() -> None:
 def test_gouache_keeps_colour_without_hard_cel_outlines() -> None:
     source, ids = _render(), synthetic_mask()
     gau = apply_style(source, ids, {"preset": "gouache", "paper": 0})
-    with_zero_lines = apply_style(
-        source, None, {"preset": "gouache", "paper": 0, "line_width": 0}
-    )
+    with_zero_lines = apply_style(source, None, {"preset": "gouache", "paper": 0, "line_width": 0})
     assert gau.tobytes() == with_zero_lines.tobytes()
     assert gau.getpixel((VASE_BOX[0] + 5, VASE_BOX[1] + 5))[2] > 100
     assert gau.tobytes() != apply_style(source, ids, {"preset": "oil", "paper": 0}).tobytes()
