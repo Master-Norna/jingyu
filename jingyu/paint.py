@@ -151,9 +151,7 @@ def apply_paint(
 
     alpha = image.getchannel("A") if "A" in image.getbands() else None
     result = image.convert("RGB")
-    if normal_mask is not None and (
-        normal_mask.mode != "RGBA" or normal_mask.size != result.size
-    ):
+    if normal_mask is not None and (normal_mask.mode != "RGBA" or normal_mask.size != result.size):
         raise JingyuError("candidate.integrity_mismatch", "invalid normal pass for painting")
     for operation in operations:
         mask = _target_mask(result.size, operation["target"], id_mask, id_map)
@@ -282,9 +280,7 @@ def _hatch(
     elif flow == "contour":
         lines = _tone_hatch_lines(image, target, spacing, width, angle, contour=True)
     else:
-        lines = _tone_hatch_lines(
-            image, target, spacing, width, angle, normal_mask=normal_mask
-        )
+        lines = _tone_hatch_lines(image, target, spacing, width, angle, normal_mask=normal_mask)
     darkness = ImageOps.invert(ImageOps.grayscale(image))
     stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
     return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
@@ -453,9 +449,7 @@ def _tone_hatch_lines(
                 spacing,
                 normal_mask=normal_mask,
             )
-            forward = _trace_tone(
-                gray, target, (sx, sy), initial, spacing, normal_mask=normal_mask
-            )
+            forward = _trace_tone(gray, target, (sx, sy), initial, spacing, normal_mask=normal_mask)
             points = [*reversed(backward), (float(sx), float(sy)), *forward]
             # A one-pixel-wide part may not admit any continuous stroke segment.
             draw.point((sx, sy), fill=255)

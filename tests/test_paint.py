@@ -485,8 +485,7 @@ def test_surface_requires_normal_pass_and_keeps_parent(
     painted = paint_candidate(workspace, source.id, [action])
     assert painted.receipt["paint"]["operations"][0]["flow"] == "surface"
     assert (
-        painted.file("normal_mask.png").read_bytes()
-        == source.file("normal_mask.png").read_bytes()
+        painted.file("normal_mask.png").read_bytes() == source.file("normal_mask.png").read_bytes()
     )
     assert CandidateStore(workspace).verify(painted) == []
     assert CandidateStore(workspace).verify(source) == []
