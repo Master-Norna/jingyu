@@ -552,7 +552,6 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
 
 
 
-
 def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
     """Lay short waxy coloured marks with unpainted paper between strokes."""
 
@@ -565,9 +564,7 @@ def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
         for x in range(0, image.width, pitch):
             for layer in range(2):
                 key = (
-                    (x + 1) * 73856093
-                    ^ (y + 1) * 19349663
-                    ^ (seed + 149 + layer) * 83492791
+                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 149 + layer) * 83492791
                 ) & 0xFFFFFFFF
                 px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
                 py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
@@ -603,9 +600,7 @@ def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> I
             if darkness < 0.12:
                 continue
             radius = max(0.65, pitch * 0.42 * math.sqrt(darkness))
-            draw.ellipse(
-                (px - radius, py - radius, px + radius, py + radius), fill=175
-            )
+            draw.ellipse((px - radius, py - radius, px + radius, py + radius), fill=175)
     ink = Image.new("RGB", image.size, (35, 39, 48))
     printed = Image.composite(ink, printed, dots)
 
@@ -615,9 +610,7 @@ def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> I
     shifted = Image.new("L", image.size, 0)
     shifted.paste(edges, (1, 0))
     fringe = ImageChops.subtract(shifted, edges).point(lambda v: v * 2 // 5)
-    printed = Image.composite(
-        Image.new("RGB", image.size, (183, 64, 81)), printed, fringe
-    )
+    printed = Image.composite(Image.new("RGB", image.size, (183, 64, 81)), printed, fringe)
     return _on(printed, paper_texture(image.size, seed + 157, paper * 0.45))
 
 
@@ -637,9 +630,7 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
     shadow = Image.new("RGB", image.size, (80, 77, 74))
     offset = max(1, round(2 * scale))
     for index in layers:
-        mask = indexed.point(
-            [255 if value == index else 0 for value in range(256)], mode="L"
-        )
+        mask = indexed.point([255 if value == index else 0 for value in range(256)], mode="L")
         # A one-pixel clearance makes adjacent paper layers legible.
         if min(image.size) >= 3:
             mask = mask.filter(ImageFilter.MinFilter(3))
@@ -651,6 +642,7 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
         patch = Image.new("RGB", image.size, colour)
         page = Image.composite(patch, page, mask)
     return _on(page, paper_texture(image.size, seed + 163, paper * 0.35))
+
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
     return ImageChops.multiply(image, Image.merge("RGB", (texture, texture, texture)))
