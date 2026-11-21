@@ -348,10 +348,11 @@ def _tone_hatch_lines(
     )
     fallback = (math.cos(angle), math.sin(angle))
     draw = ImageDraw.Draw(lines)
+    on_pixel = bytes((255,))
     for y in range(y0, y1, pitch):
         for x in range(x0, x1, pitch):
             tile = eligible.crop((x, y, min(x + pitch, x1), min(y + pitch, y1)))
-            offset = tile.tobytes().find(b"\\xff")
+            offset = tile.tobytes().find(on_pixel)
             if offset < 0:
                 continue
             sx, sy = x + offset % tile.width, y + offset // tile.width
