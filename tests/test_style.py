@@ -9,7 +9,6 @@ import pytest
 from helpers import CRATE_BOX, VASE_BOX, synthetic_mask
 from PIL import Image, ImageChops, ImageDraw
 
-from jingyu.style_strokes import directional_hatch, local_tangent, tapered_brush
 from jingyu.style import (
     PRESETS,
     _colour_edges,
@@ -19,6 +18,7 @@ from jingyu.style import (
     outlines,
     paper_texture,
 )
+from jingyu.style_strokes import directional_hatch, local_tangent, tapered_brush
 
 
 def _render() -> Image.Image:
