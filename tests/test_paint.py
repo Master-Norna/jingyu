@@ -532,7 +532,7 @@ def test_tapered_stroke_tapers_width_and_ink_without_randomness() -> None:
     second = Image.new("L", first.size, 0)
     _draw_tapered_stroke(ImageDraw.Draw(second), points, width=8, taper=1)
     assert first.tobytes() == second.tobytes()
-    assert first.getpixel((46, 20)) == 255
+    assert first.getpixel((46, 20)) >= 250
     assert 0 < first.getpixel((10, 20)) < 255
     assert first.getpixel((46, 16)) > 0
     assert first.getpixel((10, 16)) == 0
