@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 
 import pytest
-from helpers import SYNTHETIC_ID_MAP_OBJECTS, VASE_BOX, CandidateFactory
+from helpers import SYNTHETIC_ID_MAP_OBJECTS, CandidateFactory
 from PIL import Image, ImageDraw
 
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
@@ -13,7 +13,6 @@ from jingyu.errors import JingyuError
 from jingyu.paint import apply_paint, paint_candidate
 from jingyu.tools.builtin import REGISTRY
 from jingyu.tools.registry import ToolContext
-from jingyu.workspace import Workspace
 
 
 def test_paint_object_is_local_and_keeps_the_parent(make_candidate: CandidateFactory) -> None:
