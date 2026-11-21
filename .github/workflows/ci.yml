@@ -1,9 +1,12 @@
 name: CI
 
+# Run every PR and the default branch, but not every temporary branch push.
+# A branch created from main initially points at the same SHA; the old push
+# workflow could later be cancelled and mark that otherwise-green SHA as failed.
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
   workflow_dispatch:
 

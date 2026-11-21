@@ -82,7 +82,7 @@ def apply_style(
 def outlines(id_mask: Image.Image | None, size: tuple[int, int], width: float) -> Image.Image:
     """White where one object or part meets another (or the background), as "L"."""
 
-    if id_mask is None:
+    if id_mask is None or width <= 0:
         return Image.new("L", size, 0)
     mask = id_mask.convert("RGBA")
     edges = Image.new("L", mask.size, 0)
@@ -176,6 +176,27 @@ def canvas_texture(size: tuple[int, int], amount: float, scale: float) -> Image.
     return ImageChops.multiply(rows, cols).point(lambda v: min(255, v + (255 - low) // 2))
 
 
+def _shift_clamped(image: Image.Image, dx: int, dy: int) -> Image.Image:
+    """Shift an image with edge extension, never joining opposite borders."""
+
+    width, height = image.size
+    dx = max(-width, min(width, dx))
+    dy = max(-height, min(height, dy))
+    shifted = image
+    if dx:
+        shifted = ImageChops.offset(shifted, dx, 0)
+        left = dx > 0
+        column = image.crop((0 if left else width - 1, 0, 1 if left else width, height))
+        shifted.paste(column.resize((abs(dx), height)), (0 if left else width - abs(dx), 0))
+    if dy:
+        before = shifted
+        shifted = ImageChops.offset(shifted, 0, dy)
+        top = dy > 0
+        row = before.crop((0, 0 if top else height - 1, width, 1 if top else height))
+        shifted.paste(row.resize((width, abs(dy))), (0, 0 if top else height - abs(dy)))
+    return shifted
+
+
 def kuwahara(image: Image.Image, radius: int) -> Image.Image:
     """Each pixel takes the mean colour of the calmest of its four quadrant windows.
 
@@ -193,8 +214,8 @@ def kuwahara(image: Image.Image, radius: int) -> Image.Image:
     best_spread: Image.Image | None = None
     best: Image.Image | None = None
     for dx, dy in ((-half, -half), (half, -half), (-half, half), (half, half)):
-        spread = ImageChops.offset(deviation, dx, dy)
-        shifted = ImageChops.offset(means, dx, dy)
+        spread = _shift_clamped(deviation, dx, dy)
+        shifted = _shift_clamped(means, dx, dy)
         if best_spread is None or best is None:
             best_spread, best = spread, shifted
             continue
@@ -216,10 +237,13 @@ def _ink(
     tone = ImageEnhance.Color(flatten(image, 4, 0.35)).enhance(0.55)
     cream = Image.new("RGB", image.size, (246, 241, 229))
     washed = Image.blend(tone, cream, 0.35)
-    lines = ImageChops.lighter(outlines(id_mask, image.size, line), value_edges(image, line, 40))
-    ink = Image.new("RGB", image.size, (28, 26, 30))
-    drawn = Image.composite(ink, washed, lines)
-    return _on(drawn, paper_texture(image.size, seed, paper))
+    if line > 0:
+        lines = ImageChops.lighter(
+            outlines(id_mask, image.size, line), value_edges(image, line, 40)
+        )
+        ink = Image.new("RGB", image.size, (28, 26, 30))
+        washed = Image.composite(ink, washed, lines)
+    return _on(washed, paper_texture(image.size, seed, paper))
 
 
 def _watercolor(
