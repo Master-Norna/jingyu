@@ -337,3 +337,31 @@ def test_tone_hatching_bounds_the_number_of_strokes() -> None:
         )
     assert exc.value.code == "tool.invalid_arguments"
     assert "spacing" in (exc.value.hint or "")
+
+
+def test_tone_hatching_paints_a_one_pixel_diagonal_object() -> None:
+    image = Image.new("RGB", (96, 96), (24, 24, 24))
+    mask = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    for x in range(96):
+        mask.putpixel((x, 95 - x), (0, 0, 1, 255))
+    operation = {
+        "op": "hatch",
+        "target": {"object": "sliver"},
+        "flow": "tone",
+        "spacing": 8,
+        "angle": 45,
+        "color": "#ffffff",
+        "strength": 1,
+    }
+    painted = apply_paint(
+        image,
+        [operation],
+        id_mask=mask,
+        id_map={"objects": {"1": {"object": "sliver"}}},
+    )
+    assert sum(painted.getpixel((x, 95 - x)) != (24, 24, 24) for x in range(96)) >= 8
+    assert painted.getpixel((0, 0)) == (24, 24, 24)
+    assert painted.getpixel((48, 48)) == (24, 24, 24)
+    assert painted.tobytes() == apply_paint(
+        image, [operation], id_mask=mask, id_map={"objects": {"1": {"object": "sliver"}}}
+    ).tobytes()
