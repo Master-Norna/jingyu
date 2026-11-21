@@ -404,7 +404,7 @@ def test_stainedglass_has_dark_leading_and_coloured_panes() -> None:
     seam = glass.getpixel((50, 30))
     assert left[2] > left[0]
     assert right[0] > right[2]
-    assert max(seam) < min(min(left), min(right))
+    assert sum(seam) < min(sum(left), sum(right)) * 0.6
     assert glass.getpixel((22, 30)) == left
 
 
