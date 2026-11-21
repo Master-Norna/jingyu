@@ -156,6 +156,27 @@ def test_ink_stays_inside_target_edges() -> None:
     assert changed.getpixel((7, 12)) == (255, 255, 255)
 
 
+def test_full_frame_edge_ink_strokes_all_four_borders() -> None:
+    source = Image.new("RGB", (40, 30), "white")
+    painted = apply_paint(
+        source,
+        [
+            {
+                "op": "edge_ink",
+                "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
+                "color": "#000000",
+                "width": 2,
+                "strength": 1,
+            }
+        ],
+    )
+    assert painted.getpixel((0, 15)) == (0, 0, 0)
+    assert painted.getpixel((39, 15)) == (0, 0, 0)
+    assert painted.getpixel((20, 0)) == (0, 0, 0)
+    assert painted.getpixel((20, 29)) == (0, 0, 0)
+    assert painted.getpixel((20, 15)) == (255, 255, 255)
+
+
 def test_paint_preserves_rgba_and_is_repeatable() -> None:
     source = Image.new("RGBA", (32, 24), (120, 170, 210, 128))
     source.putpixel((3, 3), (120, 170, 210, 0))
