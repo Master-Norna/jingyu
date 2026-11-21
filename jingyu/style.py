@@ -27,7 +27,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageMa
 
 from .geometry.noise import value_noise
 from .style_media import embroidery, frottage, glaze
-from .style_strokes import directional_hatch, tapered_brush
+from .style_strokes import directional_hatch, local_tangent, tapered_brush
 
 PRESETS: dict[str, str] = {
     "none": "The render as it is.",
@@ -400,12 +400,69 @@ def _charcoal(
     paper: float,
     seed: int,
 ) -> Image.Image:
-    """Smudged graphite values, dry grain and scene-aware sketch lines."""
+    """Directional charcoal rubbing with dry-pressure marks on textured paper.
 
-    value = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.45, 1.4 * scale)))
-    pigment = ImageChops.multiply(
-        ImageOps.invert(value), paper_texture(image.size, seed + 23, paper)
+    The smudge follows local tonal contours, not a global fixed direction.
+    Short, seeded strokes restore broken dry pigment after the soft rub.
+    Strong tonal boundaries keep their original value to limit cross-edge bleed.
+    """
+
+    shade = ImageOps.invert(ImageOps.grayscale(image))
+    soft = shade.filter(ImageFilter.GaussianBlur(max(0.45, 1.1 * scale)))
+    reach = max(1, round(4 * scale))
+    left = _shift_clamped(soft, -reach, 0)
+    right = _shift_clamped(soft, reach, 0)
+    up = _shift_clamped(soft, 0, -reach)
+    down = _shift_clamped(soft, 0, reach)
+    # Stronger horizontal change -> smudge vertically along that edge, and
+    # vice versa. Edge extension prevents marks from wrapping across the canvas.
+    horizontal = Image.blend(left, right, 0.5)
+    vertical = Image.blend(up, down, 0.5)
+    gx = ImageChops.difference(left, right)
+    gy = ImageChops.difference(up, down)
+    along_vertical = ImageMath.lambda_eval(
+        lambda values: (values["x"] > values["y"]) * 255, x=gx, y=gy
+    ).convert("L")
+    rubbed = Image.blend(soft, Image.composite(vertical, horizontal, along_vertical), 0.52)
+    # Keep large silhouettes intact rather than smearing pigment through them.
+    sharp = ImageChops.difference(shade, rubbed).point(
+        lambda value: min(255, max(0, (value - 12) * 10))
     )
+    rubbed = Image.composite(shade, rubbed, sharp)
+
+    # The irregular paper tooth lifts pigment from the rubbing. With paper=0,
+    # the procedural tooth vanishes; directional marks remain a separate layer.
+    tooth = paper_texture(image.size, seed + 23, paper * 1.5)
+    pigment = ImageChops.multiply(rubbed, tooth)
+
+    marks = Image.new("L", image.size, 0)
+    draw = ImageDraw.Draw(marks)
+    pitch = max(5, round(12 * scale))
+    step = max(1, round(3 * scale))
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            key = (
+                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 31) * 83492791
+            ) & 0xFFFFFFFF
+            px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
+            py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
+            darkness = cast(int, shade.getpixel((px, py)))
+            if darkness < 45 or (key & 255) > darkness:
+                continue
+            vx, vy = local_tangent(soft, px, py, step)
+            length = max(2, round((7 + ((key >> 24) & 7)) * scale))
+            thickness = max(1, round((1.5 + ((key >> 20) & 3) * 0.45) * scale))
+            pressure = min(95, darkness * (30 + ((key >> 27) & 15)) // 120)
+            draw.line(
+                (px - vx * length / 2, py - vy * length / 2,
+                 px + vx * length / 2, py + vy * length / 2),
+                fill=pressure,
+                width=thickness,
+            )
+    dry = marks.filter(ImageFilter.GaussianBlur(max(0.25, 0.38 * scale)))
+    # A stroke can taper into shadow, but must never paint a blank white shape.
+    dry = ImageChops.multiply(dry, shade.point(lambda value: min(255, value * 2)))
+    pigment = ImageChops.add(pigment, dry)
     if line > 0:
         detail = ImageChops.lighter(
             outlines(id_mask, image.size, line), value_edges(image, line, 40)
