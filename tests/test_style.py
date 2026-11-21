@@ -648,3 +648,24 @@ def test_embroidery_layers_threads_and_keeps_exposed_weave() -> None:
     pixels = list(first.getdata())
     assert any(r > 200 and g > 195 and b > 175 for r, g, b in pixels)
     assert any(b > r and b > g for r, g, b in pixels)
+
+
+def test_embroidery_keeps_ink_colours_inside_quantized_regions() -> None:
+    source = Image.new("RGB", (144, 90), (165, 42, 38))
+    ImageDraw.Draw(source).rectangle((72, 0, 143, 89), fill=(36, 65, 173))
+    result = apply_style(source, None, {"preset": "embroidery", "paper": 0, "seed": 8})
+
+    def coloured_pixels(x0: int, x1: int) -> list[tuple[int, int, int]]:
+        return [
+            result.getpixel((x, y))
+            for y in range(result.height)
+            for x in range(x0, x1)
+            if max(result.getpixel((x, y))) - min(result.getpixel((x, y))) > 50
+        ]
+
+    left, right = coloured_pixels(0, 72), coloured_pixels(72, 144)
+    assert left and right
+    assert all(r > b for r, _, b in left)
+    assert all(b > r for r, _, b in right)
+
+
