@@ -63,11 +63,15 @@ def test_tool_names_are_unique_snake_case() -> None:
     assert [t.name for t in REGISTRY] == names
 
 
-def test_only_render_and_edit_write() -> None:
+def test_only_scene_render_and_paint_tools_write() -> None:
     writers = [t.name for t in REGISTRY if not t.read_only]
-    assert writers == ["edit_scene", "render_scene"]
+    assert writers == ["edit_scene", "render_scene", "paint_candidate"]
     assert not any(t.destructive for t in REGISTRY)
-    assert {t.name for t in REGISTRY if t.returns_images} == {"render_scene", "view_candidate"}
+    assert {t.name for t in REGISTRY if t.returns_images} == {
+        "render_scene",
+        "paint_candidate",
+        "view_candidate",
+    }
 
 
 def test_unknown_tool(ctx: ToolContext) -> None:

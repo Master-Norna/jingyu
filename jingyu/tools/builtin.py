@@ -20,6 +20,7 @@ from ..lighting import LightMap
 from ..locate import Box, IdMask
 from ..materials import MATERIALS
 from ..measure import colors_by_index, colors_by_object, object_color_report
+from ..paint import paint_candidate
 from ..render import render_scene
 from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
 from ..scene.diff import diff_scenes
@@ -182,6 +183,10 @@ GUIDE_WORKFLOW = [
     "For a painted look set render.style (ink, watercolor, oil, cel); the photographic "
     "render stays beside it (view render). For a series, keep a picture charter file and "
     "check_charter each picture against it: it answers with questions, not a score.",
+    "For local painted changes after rendering, paint_candidate can wash, hatch or ink "
+    "the selected object, part or rectangle without rerunning Blender. For hatch, use "
+    "flow 'tone' for short strokes following tonal contours, or the default 'straight' "
+    "for parallel lines. Review each immutable candidate against its source.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -274,6 +279,28 @@ def _render_scene(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "render": receipt["render"],
             "timings_ms": receipt["timings_ms"],
             "warnings": receipt["warnings"],
+        },
+        images,
+    )
+
+
+def _paint_candidate(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    candidate = paint_candidate(
+        ctx.workspace,
+        args["candidate_id"],
+        args["operations"],
+        base=args.get("base", "image"),
+    )
+    images: tuple[ImagePayload, ...] = ()
+    if args.get("return_image", True):
+        view = render_view(candidate, "full", max_size=args.get("max_image_size", 1024))
+        images = (ImagePayload(view.png, f"{candidate.id} (painted)"),)
+    return ToolResult(
+        {
+            "candidate_id": candidate.id,
+            "path": ctx.workspace.relative(candidate.path),
+            "derived_from": candidate.receipt["derived_from"],
+            "paint": candidate.receipt["paint"],
         },
         images,
     )
@@ -797,6 +824,132 @@ REGISTRY.add(
             ["candidate_id", "path", "scene_sha256", "quality", "render", "timings_ms", "warnings"],
         ),
         handler=_render_scene,
+        read_only=False,
+        idempotent=False,
+        returns_images=True,
+    )
+)
+
+_PAINT_TARGET = {
+    "type": "object",
+    "additionalProperties": False,
+    "description": "An object, an assembly part or a rectangular image region.",
+    "properties": {
+        "object": {"type": "string", "minLength": 1},
+        "part": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {"object": _STRING, "part": _STRING},
+            "required": ["object", "part"],
+        },
+        "region": _REGION,
+    },
+    "oneOf": [
+        {"required": ["object"]},
+        {"required": ["part"]},
+        {"required": ["region"]},
+    ],
+}
+_PAINT_ACTION = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["op", "target"],
+    "properties": {
+        "op": {"enum": ["wash", "hatch", "edge_ink"]},
+        "target": _PAINT_TARGET,
+        "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$",
+            "description": "Paint colour in sRGB hex.",
+        },
+        "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Opacity: wash defaults to 0.35, hatch to 0.65, edge_ink to 0.9.",
+        },
+        "angle": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180,
+            "default": 45,
+            "description": "Hatch line direction in degrees.",
+        },
+        "spacing": {
+            "type": "number",
+            "minimum": 2,
+            "maximum": 100,
+            "default": 8,
+            "description": "Hatch line spacing in pixels.",
+        },
+        "flow": {
+            "enum": ["straight", "tone"],
+            "default": "straight",
+            "description": (
+                "Hatch direction: straight keeps parallel lines; tone bends short "
+                "strokes along luminance contours (not 3D surface normals)."
+            ),
+        },
+        "width": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 20,
+            "default": 1.5,
+            "description": "Hatch or edge stroke width in pixels.",
+        },
+    },
+    "allOf": [
+        {
+            "if": {"properties": {"op": {"const": "hatch"}}, "required": ["op"]},
+            "else": {"not": {"required": ["flow"]}},
+        }
+    ],
+}
+
+REGISTRY.add(
+    Tool(
+        name="paint_candidate",
+        title="Paint locally onto a rendered candidate",
+        description=(
+            "Apply wash, hatching or edge ink to an object, assembly part or rectangle "
+            "without Blender. Each call creates a new immutable candidate with the "
+            "paint operations recorded; use the returned id for further edits."
+        ),
+        input_schema=_input(
+            {
+                "candidate_id": _CANDIDATE_ID,
+                "base": {
+                    "enum": ["image", "render"],
+                    "default": "image",
+                    "description": "Paint the current image or the original photographic view.",
+                },
+                "operations": {
+                    "type": "array",
+                    "items": _PAINT_ACTION,
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "description": "Ordered local painting actions.",
+                },
+                "return_image": {"type": "boolean", "default": True},
+                "max_image_size": {
+                    "type": "integer",
+                    "minimum": 64,
+                    "maximum": 4096,
+                    "default": 1024,
+                },
+            },
+            ["candidate_id", "operations"],
+        ),
+        output_schema=_output(
+            {
+                "candidate_id": _CANDIDATE_ID,
+                "path": _STRING,
+                "derived_from": _ANY_OBJECT,
+                "paint": _ANY_OBJECT,
+            },
+            ["candidate_id", "path", "derived_from", "paint"],
+        ),
+        handler=_paint_candidate,
         read_only=False,
         idempotent=False,
         returns_images=True,
