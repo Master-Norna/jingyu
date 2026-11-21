@@ -38,7 +38,7 @@ def frottage(image: Image.Image, scale: float, paper: Image.Image, seed: int) ->
             length = pitch + (key >> 23) % (pitch + 1)
             draw.line(
                 (px, py, min(image.width - 1, px + length), py),
-                fill=min(255, pressure),
+                fill=min(255, pressure * (65 + ((key >> 19) & 63)) // 105),
                 width=max(1, round(1.4 * scale)),
             )
     ink = ImageChops.lighter(ink, marks)
