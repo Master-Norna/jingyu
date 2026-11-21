@@ -370,3 +370,72 @@ def test_new_styles_are_distinct_and_keep_legacy_alpha_strength() -> None:
         assert full.tobytes() != half.tobytes()
         results.append(full.tobytes())
     assert len(set(results)) == 3
+
+
+@pytest.mark.parametrize("preset", ["sumi", "stainedglass", "cyanotype"])
+def test_ink_glass_blueprint_styles_are_valid_scene_presets(preset: str) -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": preset, "seed": 21}
+    assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
+
+
+def test_sumi_has_monochrome_washes_and_darker_brushwork() -> None:
+    source = Image.new("RGB", (120, 72), (240, 180, 110))
+    ImageDraw.Draw(source).rectangle((60, 0, 119, 71), fill=(24, 39, 57))
+    base = {"preset": "sumi", "line_width": 0, "paper": 0, "seed": 17}
+    first = apply_style(source, None, base)
+    assert first.tobytes() == apply_style(source, None, base).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**base, "seed": 18}).tobytes()
+    assert all(max(pixel) - min(pixel) < 16 for pixel in first.getdata())
+    light = [first.getpixel((x, y))[0] for y in range(9, 61) for x in range(8, 50)]
+    dark = [first.getpixel((x, y))[0] for y in range(9, 61) for x in range(70, 112)]
+    assert sum(dark) < sum(light) * 0.60
+    assert len(set(dark)) > 5  # layered wash tones, not one binary black area
+
+
+def test_stainedglass_has_dark_leading_and_coloured_panes() -> None:
+    source = Image.new("RGB", (100, 68), (26, 80, 194))
+    ImageDraw.Draw(source).rectangle((50, 0, 99, 67), fill=(214, 75, 34))
+    glass = apply_style(source, None, {"preset": "stainedglass", "paper": 0})
+    left = glass.getpixel((20, 30))
+    right = glass.getpixel((80, 30))
+    seam = glass.getpixel((50, 30))
+    assert left[2] > left[0]
+    assert right[0] > right[2]
+    assert max(seam) < min(min(left), min(right))
+    assert glass.getpixel((22, 30)) == left
+
+
+def test_cyanotype_is_blue_monochrome_and_follows_luminance() -> None:
+    source = Image.new("RGB", (104, 68), (243, 240, 240))
+    ImageDraw.Draw(source).rectangle((52, 0, 103, 67), fill=(17, 27, 34))
+    blue = apply_style(source, None, {"preset": "cyanotype", "paper": 0, "line_width": 0})
+    dark = blue.getpixel((80, 34))
+    light = blue.getpixel((23, 34))
+    assert dark[2] > dark[0] * 2
+    assert sum(dark) < sum(light) * 0.60
+    assert light[0] > 200
+    assert len(set(blue.getdata())) > 3  # softened transitions, not flat posterization
+
+
+@pytest.mark.parametrize("preset", ["sumi", "stainedglass", "cyanotype"])
+def test_new_media_keep_alpha_strength_seed_and_existing_render(preset: str) -> None:
+    image = _render().convert("RGBA")
+    original = image.tobytes()
+    alpha = Image.new("L", image.size, 0)
+    ImageDraw.Draw(alpha).rectangle((12, 9, 51, 38), fill=128)
+    image.putalpha(alpha)
+    opts = {"preset": preset, "paper": 1, "seed": 7}
+    first = apply_style(image, synthetic_mask(), opts)
+    again = apply_style(image, synthetic_mask(), opts)
+    second_seed = apply_style(image, synthetic_mask(), {**opts, "seed": 8})
+    half = apply_style(image, synthetic_mask(), {**opts, "strength": 0.5})
+    assert first.tobytes() == again.tobytes()
+    assert first.tobytes() != second_seed.tobytes()
+    assert first.tobytes() != half.tobytes()
+    assert first.getchannel("A").tobytes() == alpha.tobytes()
+    assert half.getchannel("A").tobytes() == alpha.tobytes()
+    assert image.convert("RGB").tobytes() == _render().tobytes()
+    assert original != image.tobytes()
