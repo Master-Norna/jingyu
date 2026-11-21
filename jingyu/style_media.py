@@ -51,36 +51,69 @@ def frottage(image: Image.Image, scale: float, paper: Image.Image, seed: int) ->
 
 
 def embroidery(image: Image.Image, scale: float, paper: Image.Image, seed: int) -> Image.Image:
-    """Form the colour image from separate diagonal thread stitches on cloth."""
+    """Layer satin-style thread marks without bleeding colour across regions.
 
-    quantized = image.quantize(colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    flat = quantized.convert("RGB")
+    Shared grayscale stroke masks let every thread pick up its *destination*
+    pixel's palette colour. Unlike painting sampled RGB lines directly, this
+    keeps small differently coloured shapes intact at stitch boundaries.
+    """
+
+    flat = image.quantize(
+        colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+    ).convert("RGB")
     fabric = Image.new("RGB", image.size, (231, 223, 204))
-    draw = ImageDraw.Draw(fabric)
-    pitch = max(5, round(15 * scale))
-    width = max(1, round(2.2 * scale))
-    for y in range(0, image.height, pitch):
-        for x in range(0, image.width, pitch):
-            cx = min(image.width - 1, x + pitch // 2)
-            cy = min(image.height - 1, y + pitch // 2)
-            index = cast(int, quantized.getpixel((cx, cy)))
+    pitch = max(6, round(12 * scale))
+    stitch_width = max(1, round(2.1 * scale))
+    stride = max(3, pitch // 3)
+    width, height = image.size
+
+    # Fine warp and weft remain visible between the laid threads.
+    weave = ImageDraw.Draw(fabric)
+    for y in range(0, height, max(3, pitch // 2)):
+        weave.line((0, y, width - 1, y), fill=(224, 215, 196), width=1)
+    for x in range(0, width, max(3, pitch // 2)):
+        weave.line((x, 0, x, height - 1), fill=(226, 218, 199), width=1)
+
+    under = Image.new("L", image.size, 0)
+    core = Image.new("L", image.size, 0)
+    ridge = Image.new("L", image.size, 0)
+    under_draw, core_draw, ridge_draw = (
+        ImageDraw.Draw(under),
+        ImageDraw.Draw(core),
+        ImageDraw.Draw(ridge),
+    )
+
+    for row, y in enumerate(range(0, height, stride)):
+        for x in range(0, width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 199) * 83492791) & 0xFFFFFFFF
+            cx = min(width - 1, x + pitch // 2)
+            cy = min(height - 1, y + stride // 2)
             colour = cast(tuple[int, int, int], flat.getpixel((cx, cy)))
-            x0, y0 = x + 1, y + 1
-            x1 = min(image.width - 1, x + pitch - 2)
-            y1 = min(image.height - 1, y + pitch - 2)
-            if x1 <= x0 or y1 <= y0:
+            # Preserve exposed fabric in light regions instead of filling a grid.
+            if sum(colour) >= 705 and (key & 3) != 0:
                 continue
-            if (index + seed) & 1:
-                segment = (x0, y1, x1, y0)
-                highlight = (x0, y1 - 1, x1, max(0, y0 - 1))
-            else:
-                segment = (x0, y0, x1, y1)
-                highlight = (x0, y0 - 1, x1, max(0, y1 - 1))
-            dark = tuple(max(0, value * 4 // 5) for value in colour)
-            bright = tuple(min(255, value + 34) for value in colour)
-            draw.line(segment, fill=dark, width=width + 1)
-            draw.line(segment, fill=colour, width=width)
-            draw.line(highlight, fill=bright, width=1)
+            shift = ((key >> 12) % 3) - 1
+            left = max(0, x + shift)
+            right = min(width - 1, x + pitch - 2 + shift)
+            if right <= left:
+                continue
+            top = max(0, y - stride // 2)
+            bottom = min(height - 1, y + stride + stride // 2)
+            segment = (left, bottom, right, top) if row & 1 else (left, top, right, bottom)
+            under_draw.line(segment, fill=255, width=stitch_width + 2)
+            core_draw.line(segment, fill=255, width=stitch_width)
+            x0, y0, x1, y1 = segment
+            ridge_draw.line(
+                (x0, max(0, y0 - 1), x1, max(0, y1 - 1)),
+                fill=255,
+                width=1,
+            )
+
+    dark = flat.point(lambda value: value * 3 // 4)
+    bright = flat.point(lambda value: min(255, value + 32))
+    fabric = Image.composite(dark, fabric, under)
+    fabric = Image.composite(flat, fabric, core)
+    fabric = Image.composite(bright, fabric, ridge)
     return _on(fabric, paper)
 
 
