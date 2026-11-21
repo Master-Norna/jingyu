@@ -653,7 +653,6 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
 
 
 
-
 def _sumi(
     image: Image.Image,
     id_mask: Image.Image | None,
@@ -682,7 +681,7 @@ def _sumi(
                 continue
             brush.line(
                 (px, py, min(image.width - 1, px + length), max(0, py - length // 3)),
-                fill=min(255, weight),
+                fill=min(255, 175 + weight // 3),
                 width=max(1, round(2.0 * scale)),
             )
     ink = ImageChops.lighter(washes, marks)
@@ -719,16 +718,12 @@ def _stainedglass(
     boundaries = ImageChops.difference(neighbourhood, opposite)
     boundaries = boundaries.point(lambda value: 255 if value else 0)
     if line > 0:
-        boundaries = ImageChops.lighter(
-            boundaries, outlines(id_mask, image.size, line)
-        )
+        boundaries = ImageChops.lighter(boundaries, outlines(id_mask, image.size, line))
     panes = ImageEnhance.Color(palette_image.convert("RGB")).enhance(1.3)
     panes = ImageEnhance.Brightness(panes).enhance(1.08)
     # No wraparound at image borders; thick leading remains a distinct layer.
     lead = boundaries.filter(ImageFilter.MaxFilter(3))
-    glass = Image.composite(
-        Image.new("RGB", image.size, (30, 32, 38)), panes, lead
-    )
+    glass = Image.composite(Image.new("RGB", image.size, (30, 32, 38)), panes, lead)
     return _on(glass, paper_texture(image.size, seed + 181, paper * 0.12))
 
 
@@ -742,14 +737,10 @@ def _cyanotype(
 ) -> Image.Image:
     """Photographic blue values with pale contours like contact-print edges."""
 
-    exposure = ImageOps.grayscale(image).filter(
-        ImageFilter.GaussianBlur(max(0.35, 0.75 * scale))
-    )
+    exposure = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.35, 0.75 * scale)))
     if line > 0:
         contours = outlines(id_mask, image.size, line)
-        exposure = ImageChops.add(
-            exposure, contours.point(lambda value: value // 5)
-        )
+        exposure = ImageChops.add(exposure, contours.point(lambda value: value // 5))
     blue = ImageOps.colorize(
         exposure,
         black=(11, 40, 98),
@@ -757,6 +748,7 @@ def _cyanotype(
         mid=(65, 123, 177),
     )
     return _on(blue, paper_texture(image.size, seed + 191, paper * 0.55))
+
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
     return ImageChops.multiply(image, Image.merge("RGB", (texture, texture, texture)))
