@@ -38,7 +38,7 @@ def test_none_leaves_the_render_alone() -> None:
     render = _render()
     assert apply_style(render, None, {"preset": "none"}) is render
     with pytest.raises(ValueError, match="preset"):
-        apply_style(render, None, {"preset": "pastel"})
+        apply_style(render, None, {"preset": "unsupported_style"})
 
 
 def test_outlines_follow_the_id_mask() -> None:
@@ -231,3 +231,74 @@ def test_gouache_keeps_colour_without_hard_cel_outlines() -> None:
     assert gau.tobytes() == with_zero_lines.tobytes()
     assert gau.getpixel((VASE_BOX[0] + 5, VASE_BOX[1] + 5))[2] > 100
     assert gau.tobytes() != apply_style(source, ids, {"preset": "oil", "paper": 0}).tobytes()
+
+
+@pytest.mark.parametrize("preset", ["pastel", "etching", "mosaic"])
+def test_new_artistic_styles_validate_as_scenes(preset: str) -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": preset, "seed": 23}
+    assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
+
+
+def test_new_styles_use_three_distinct_drawing_mechanisms() -> None:
+    scene = _render()
+    results = [
+        apply_style(scene, synthetic_mask(), {"preset": preset, "paper": 0})
+        for preset in ("pastel", "etching", "mosaic")
+    ]
+    assert len({im.tobytes() for im in results}) == 3
+    pastel, etching, mosaic = results
+    assert any(max(pixel) - min(pixel) > 35 for pixel in pastel.getdata())
+    assert all(max(pixel) - min(pixel) < 28 for pixel in etching.getdata())
+    assert any(max(pixel) - min(pixel) > 35 for pixel in mosaic.getdata())
+
+
+def test_etching_uses_shadow_crosshatching_with_exposed_paper() -> None:
+    source = Image.new("RGB", (100, 60), (248, 248, 248))
+    ImageDraw.Draw(source).rectangle((50, 0, 99, 59), fill=(17, 17, 17))
+    result = apply_style(source, None, {"preset": "etching", "paper": 0, "line_width": 0})
+    lights = [result.getpixel((x, y))[0] for y in range(8, 52) for x in range(8, 42)]
+    shadows = [result.getpixel((x, y))[0] for y in range(8, 52) for x in range(58, 92)]
+    assert sum(shadows) < sum(lights) * 0.8
+    assert any(v > 210 for v in shadows)  # open spaces between ink strokes
+
+
+def test_mosaic_has_grout_and_preserves_object_colour() -> None:
+    source = Image.new("RGB", (120, 84), (30, 110, 190))
+    first = apply_style(source, None, {"preset": "mosaic", "paper": 0, "seed": 17})
+    second = apply_style(source, None, {"preset": "mosaic", "paper": 0, "seed": 18})
+    assert first.tobytes() != second.tobytes()
+    # Every tile has an opaque coloured centre surrounded by contrasting mortar.
+    grout = first.getpixel((0, 0))
+    tile = first.getpixel((3, 3))
+    assert sum(tile) > sum(grout)
+    assert tile[2] > tile[1] > tile[0]
+    assert first.getpixel((6, 3)) == grout
+
+
+def test_pastel_is_coloured_soft_and_seeded() -> None:
+    source = Image.new("RGB", (96, 64), (55, 100, 190))
+    settings = {"preset": "pastel", "paper": 1}
+    first = apply_style(source, None, {**settings, "seed": 7})
+    repeat = apply_style(source, None, {**settings, "seed": 7})
+    other = apply_style(source, None, {**settings, "seed": 8})
+    assert first.tobytes() == repeat.tobytes()
+    assert first.tobytes() != other.tobytes()
+    colours = list(first.getdata())
+    assert any(pixel[2] > pixel[1] > pixel[0] for pixel in colours)
+    assert len(set(colours)) > 20
+
+
+@pytest.mark.parametrize("preset", ["pastel", "etching", "mosaic"])
+def test_new_styles_keep_legacy_alpha_and_strength(preset: str) -> None:
+    source = _render().convert("RGBA")
+    alpha = Image.new("L", source.size, 0)
+    ImageDraw.Draw(alpha).rectangle((12, 9, 51, 38), fill=128)
+    source.putalpha(alpha)
+    full = apply_style(source, synthetic_mask(), {"preset": preset, "strength": 1})
+    half = apply_style(source, synthetic_mask(), {"preset": preset, "strength": 0.5})
+    assert full.getchannel("A").tobytes() == alpha.tobytes()
+    assert half.getchannel("A").tobytes() == alpha.tobytes()
+    assert full.tobytes() != half.tobytes()

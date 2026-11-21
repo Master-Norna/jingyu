@@ -38,6 +38,9 @@ PRESETS: dict[str, str] = {
     "pencil": "Graphite values with layered diagonal and cross hatching on drawing paper.",
     "stippling": "Tonal drawing made of discrete ink dots whose density follows shadow.",
     "gouache": "Opaque matte colour planes with softened paint edges and fine pigment grain.",
+    "pastel": "Layered coloured chalk marks with soft smudging and broken paper coverage.",
+    "etching": "Fine engraved ink lines and graduated crosshatching on printmaking paper.",
+    "mosaic": "Discrete coloured tesserae separated by visible mortar lines.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -76,6 +79,12 @@ def apply_style(
         styled = _stippling(rgb, scale, paper, seed)
     elif preset == "gouache":
         styled = _gouache(rgb, scale, paper, seed)
+    elif preset == "pastel":
+        styled = _pastel(rgb, scale, paper, seed)
+    elif preset == "etching":
+        styled = _etching(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "mosaic":
+        styled = _mosaic(rgb, scale, paper, seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
@@ -428,6 +437,115 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
     painted = ImageEnhance.Color(painted).enhance(1.13)
     matte = painted.filter(ImageFilter.GaussianBlur(max(0.2, 0.45 * scale)))
     return _on(matte, paper_texture(image.size, seed + 83, paper * 0.45))
+
+
+
+def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Smudge coloured chalk beneath short directional marks on toothy paper."""
+
+    smudged = kuwahara(image, max(2, round(6 * scale)))
+    softened = smudged.filter(ImageFilter.GaussianBlur(max(0.5, 1.8 * scale)))
+    base = Image.blend(smudged, softened, 0.55)
+    base = ImageEnhance.Color(base).enhance(1.25)
+    base = Image.blend(base, Image.new("RGB", image.size, (253, 246, 235)), 0.07)
+
+    pitch = max(5, round(12 * scale))
+    span = max(2, round(7 * scale))
+    width = max(1, round(2 * scale))
+    marks = ImageDraw.Draw(base)
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            key = (
+                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 101) * 83492791
+            ) & 0xFFFFFFFF
+            px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
+            py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
+            sample = cast(tuple[int, int, int], image.getpixel((px, py)))
+            chalk = tuple(min(255, round(channel * 0.88 + 237 * 0.12)) for channel in sample)
+            direction = -1 if key & 1 else 1
+            marks.line(
+                (px, py, px + direction * span, py - max(1, span // 3)),
+                fill=chalk,
+                width=width,
+            )
+    return _on(base, paper_texture(image.size, seed + 107, paper * 0.9))
+
+
+def _etching(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Shade with engraved strokes, crosshatching, and incisive contour lines."""
+
+    shade = ImageOps.invert(
+        ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.45, scale)))
+    )
+    pitch = max(4, round(11 * scale))
+    fine = max(1, round(1.2 * scale))
+    primary = ImageChops.multiply(
+        _diagonal_hatch(image.size, pitch, fine, True),
+        shade.point(lambda v: min(255, max(0, (v - 20) * 3))),
+    )
+    secondary = ImageChops.multiply(
+        _diagonal_hatch(image.size, pitch + max(1, pitch // 3), fine, False),
+        shade.point(lambda v: min(255, max(0, (v - 95) * 3))),
+    )
+    deep_lines = Image.new("L", image.size, 0)
+    engraver = ImageDraw.Draw(deep_lines)
+    for y in range(0, image.height, max(3, pitch // 2)):
+        engraver.line((0, y, image.width - 1, y), fill=255, width=fine)
+    deepest = ImageChops.multiply(
+        deep_lines, shade.point(lambda v: min(255, max(0, (v - 175) * 4)))
+    )
+    etched = ImageChops.lighter(primary, ImageChops.lighter(secondary, deepest))
+    etched = ImageChops.lighter(etched, shade.point(lambda v: v // 10))
+    if line > 0:
+        contours = ImageChops.lighter(
+            outlines(id_mask, image.size, line),
+            value_edges(image, line, 58),
+        )
+        etched = ImageChops.lighter(etched, contours)
+    page = Image.new("RGB", image.size, (250, 246, 234))
+    plate_ink = Image.new("RGB", image.size, (33, 32, 34))
+    pressed = Image.composite(plate_ink, page, etched)
+    return _on(pressed, paper_texture(image.size, seed + 113, paper * 0.65))
+
+
+def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Set individually coloured tesserae with grout; no painterly blur."""
+
+    pitch = max(6, round(23 * scale))
+    grout = max(1, round(1.5 * scale))
+    background = Image.new("RGB", image.size, (76, 72, 69))
+    draw = ImageDraw.Draw(background)
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            x0, y0 = x + grout, y + grout
+            x1 = min(image.width - 1, x + pitch - grout - 1)
+            y1 = min(image.height - 1, y + pitch - grout - 1)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            cx = min(image.width - 1, x + pitch // 2)
+            cy = min(image.height - 1, y + pitch // 2)
+            colour = cast(tuple[int, int, int], image.getpixel((cx, cy)))
+            key = (
+                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 127) * 83492791
+            ) & 0xFFFFFFFF
+            variation = ((key >> 8) % 13 - 6) * 0.75
+            tile_colour = tuple(max(0, min(255, round(c + variation))) for c in colour)
+            # Corners vary *inside* the grout clearance, never across neighbouring tiles.
+            top = (key >> 16) & 1
+            bottom = (key >> 18) & 1
+            draw.polygon(
+                [(x0 + top, y0), (x1, y0 + (1 - top)),
+                 (x1 - bottom, y1), (x0, y1 - (1 - bottom))],
+                fill=tile_colour,
+            )
+    return _on(background, paper_texture(image.size, seed + 131, paper * 0.18))
 
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
