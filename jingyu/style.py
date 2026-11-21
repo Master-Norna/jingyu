@@ -620,14 +620,77 @@ def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Ima
 
 
 def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Opaque, softly broken matte colour, unlike translucent watercolor washes."""
+    """Opaque matte paint planes with seeded, colour-safe brush relief.
+
+    The underpainting suppresses tiny photographic texture; raised strokes
+    modulate the *destination* colour instead of carrying sampled pigment
+    across boundaries. Sharp colour transitions retain their source hue.
+    """
 
     dabbed = kuwahara(image, max(2, round(5 * scale)))
     planes = flatten(dabbed, 5, 0.6)
-    painted = Image.blend(dabbed, planes, 0.78)
-    painted = ImageEnhance.Color(painted).enhance(1.13)
-    matte = painted.filter(ImageFilter.GaussianBlur(max(0.2, 0.45 * scale)))
-    return _on(matte, paper_texture(image.size, seed + 83, paper * 0.45))
+    underpaint = ImageEnhance.Color(Image.blend(dabbed, planes, 0.78)).enhance(1.13)
+    value = ImageOps.grayscale(image)
+
+    shadow = Image.new("L", image.size, 0)
+    ridge = Image.new("L", image.size, 0)
+    draw_shadow = ImageDraw.Draw(shadow)
+    draw_ridge = ImageDraw.Draw(ridge)
+    pitch = max(5, round(13 * scale))
+    span = max(2, round(11 * scale))
+    thickness = max(1, round(3.1 * scale))
+    width, height = image.size
+
+    for y in range(0, height, pitch):
+        for x in range(0, width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 193) * 83492791) & 0xFFFFFFFF
+            px = min(width - 1, x + (key >> 8) % min(pitch, width - x))
+            py = min(height - 1, y + (key >> 16) % min(pitch, height - y))
+            vx, vy = local_tangent(value, px, py, max(1, round(3 * scale)))
+            # Small seeded direction changes keep large flat regions from
+            # looking like a uniform hatch, without changing local form.
+            bend = (((key >> 24) & 7) - 3) * 0.045
+            dx, dy = vx + bend * vy, vy - bend * vx
+            reach = span * (0.34 + ((key >> 27) & 3) * 0.09)
+            x0, y0 = px - dx * reach, py - dy * reach
+            x1, y1 = px + dx * reach, py + dy * reach
+
+            center = cast(tuple[int, int, int], image.getpixel((px, py)))
+            endpoints = (
+                (min(width - 1, max(0, round(x0))), min(height - 1, max(0, round(y0)))),
+                (min(width - 1, max(0, round(x1))), min(height - 1, max(0, round(y1)))),
+            )
+            if any(
+                max(abs(channel - other) for channel, other in zip(center, image.getpixel(pos)))
+                > 48
+                for pos in endpoints
+            ):
+                continue  # A single paint dab must not bridge two coloured objects.
+
+            pressure = 115 + ((key >> 19) & 63)
+            draw_shadow.line((x0, y0, x1, y1), fill=pressure, width=thickness + 1)
+            # One light raised edge and occasional breaks suggest loaded paint.
+            if (key & 3) != 0:
+                offset = 0.55 + ((key >> 22) & 3) * 0.12
+                draw_ridge.line(
+                    (
+                        x0 - dy * offset, y0 + dx * offset,
+                        x1 - dy * offset, y1 + dx * offset,
+                    ),
+                    fill=100 + ((key >> 17) & 63),
+                    width=max(1, thickness // 2),
+                )
+
+    deeper = ImageEnhance.Brightness(underpaint).enhance(0.91)
+    raised = ImageEnhance.Brightness(underpaint).enhance(1.11)
+    painted = Image.composite(deeper, underpaint, shadow)
+    painted = Image.composite(raised, painted, ridge)
+
+    # Gouache makes a crisp, opaque colour boundary, not a translucent
+    # watercolour bloom or a dark cartoon contour.
+    boundaries = _colour_edges(image, max(0.8, 1.2 * scale), 24)
+    painted = Image.composite(image, painted, boundaries)
+    return _on(painted, paper_texture(image.size, seed + 83, paper * 0.35))
 
 
 def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
