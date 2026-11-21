@@ -12,6 +12,7 @@ from PIL import Image, ImageChops, ImageDraw
 from jingyu.style import (
     PRESETS,
     _colour_edges,
+    _stippling_centers,
     apply_style,
     flatten,
     kuwahara,
@@ -667,3 +668,46 @@ def test_embroidery_keeps_ink_colours_inside_quantized_regions() -> None:
     assert left and right
     assert all(r > b for r, _, b in left)
     assert all(b > r for r, _, b in right)
+
+
+def test_stipple_centers_are_separated_without_repeated_clusters() -> None:
+    shade = Image.new("L", (180, 120), 255)
+    centers = _stippling_centers(shade, scale=1.0, seed=47)
+    assert len(centers) > 200
+    assert centers == _stippling_centers(shade, scale=1.0, seed=47)
+    assert centers != _stippling_centers(shade, scale=1.0, seed=48)
+    # Strokes have radius 1.55 at this scale, plus 0.35 pixel clearance.
+    minimum_sq = (2 * 1.55 + 0.35) ** 2
+    assert all(
+        (x - other_x) ** 2 + (y - other_y) ** 2 >= minimum_sq
+        for index, (x, y) in enumerate(centers)
+        for other_x, other_y in centers[index + 1 :]
+    )
+
+
+def test_stipple_density_increases_smoothly_across_tonal_bands() -> None:
+    shade = Image.new("L", (256, 128), 0)
+    painter = ImageDraw.Draw(shade)
+    for i, darkness in enumerate((30, 95, 170, 245)):
+        painter.rectangle((i * 64, 0, i * 64 + 63, 127), fill=darkness)
+    centers = _stippling_centers(shade, scale=1.0, seed=14)
+    counts = [sum(i * 64 <= x < (i + 1) * 64 for x, _ in centers) for i in range(4)]
+    assert counts == sorted(counts)
+    assert all(counts[i] < counts[i + 1] for i in range(3))
+
+
+def test_stipple_never_spills_ink_into_near_white_foreground() -> None:
+    source = Image.new("RGB", (140, 90), (255, 255, 255))
+    ImageDraw.Draw(source).rectangle((70, 0, 139, 89), fill=(12, 12, 12))
+    result = apply_style(source, None, {"preset": "stippling", "paper": 0, "seed": 9})
+    assert all(result.getpixel((x, y))[0] == 250 for y in range(90) for x in range(70))
+    assert any(result.getpixel((x, y))[0] < 80 for y in range(90) for x in range(70, 140))
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 40), (2, 2), (6, 9), (31, 7)])
+def test_stipple_tiny_and_thin_images_keep_bounds(size: tuple[int, int]) -> None:
+    source = Image.new("RGB", size, (38, 38, 38))
+    options = {"preset": "stippling", "paper": 0, "seed": 30}
+    first = apply_style(source, None, options)
+    assert first.size == size
+    assert first.tobytes() == apply_style(source, None, options).tobytes()

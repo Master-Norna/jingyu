@@ -484,30 +484,81 @@ def _pencil(
     return Image.composite(dark, page, graphite)
 
 
-def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Use distinct ink dots, not continuous hatches or whole-image pixel noise."""
+def _stipple_hash(value: int) -> int:
+    """Avalanche the coordinate key into stable independent-looking bits."""
 
-    width, height = image.size
-    pitch = max(4, round(9 * scale))
-    radius = max(0.65, 1.9 * scale)
+    value &= 0xFFFFFFFF
+    value ^= value >> 16
+    value = value * 0x7FEB352D & 0xFFFFFFFF
+    value ^= value >> 15
+    value = value * 0x846CA68B & 0xFFFFFFFF
+    return value ^ (value >> 16)
+
+
+def _stippling_centers(shade: Image.Image, scale: float, seed: int) -> list[tuple[int, int]]:
+    """Stratified, jittered dots with local exclusion; density follows actual value.
+
+    The old three independent candidates per square produced visible columns
+    and dot clumps. A staggered lattice proposes one candidate per cell; the
+    darker pixels accept more candidates, and a deterministic local priority
+    rejects pairs that are too close. There is no global RNG state.
+    """
+
+    width, height = shade.size
+    pitch = max(3, round(6 * scale))
+    radius = max(0.65, 1.55 * scale)
+    distance_sq = (2 * radius + 0.35) ** 2
+    candidates: dict[tuple[int, int], tuple[int, int, int]] = {}
+
+    for row in range((height + pitch - 1) // pitch + 1):
+        for col in range((width + pitch - 1) // pitch + 1):
+            key = _stipple_hash((col + 1) * 73856093 ^ (row + 1) * 19349663 ^ (seed + 1) * 83492791)
+            x = col * pitch + (pitch // 2 if row & 1 else 0)
+            x += round(((key & 255) / 255 - 0.5) * 0.74 * pitch)
+            y = row * pitch + round((((key >> 8) & 255) / 255 - 0.5) * 0.74 * pitch)
+            if not (0 <= x < width and 0 <= y < height):
+                continue
+            darkness = cast(int, shade.getpixel((x, y)))
+            density = max(0, darkness - 8) / 247
+            if (_stipple_hash(key ^ 0x9E3779B9) & 0xFFFF) / 65535 >= density:
+                continue
+            candidates[(col, row)] = (x, y, _stipple_hash(key ^ 0x85EBCA6B))
+
+    centers: list[tuple[int, int]] = []
+    for (col, row), (x, y, rank) in candidates.items():
+        blocked = False
+        for neighbor_row in range(max(0, row - 1), row + 2):
+            for neighbor_col in range(max(0, col - 1), col + 2):
+                other = candidates.get((neighbor_col, neighbor_row))
+                if other is None:
+                    continue
+                nx, ny, other_rank = other
+                wins = other_rank > rank or (
+                    other_rank == rank and (neighbor_col, neighbor_row) < (col, row)
+                )
+                if wins and (nx - x) ** 2 + (ny - y) ** 2 < distance_sq:
+                    blocked = True
+                    break
+            if blocked:
+                break
+        if not blocked:
+            centers.append((x, y))
+    return centers
+
+
+def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Ink points spread by local separation, with continuous tonal density."""
+
     shade = ImageOps.invert(ImageOps.grayscale(image))
     ink = Image.new("L", image.size, 0)
     dots = ImageDraw.Draw(ink)
-    for y in range(0, height, pitch):
-        for x in range(0, width, pitch):
-            darkness = cast(
-                int,
-                shade.getpixel((min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))),
-            )
-            for mark in range(3):
-                key = (
-                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + mark + 1) * 83492791
-                ) & 0xFFFFFFFF
-                if (key & 0xFFFF) / 65535 >= darkness / 255 * (0.92 - mark * 0.08):
-                    continue
-                px = min(width - 1, x + (key >> 16) % min(pitch, width - x))
-                py = min(height - 1, y + (key >> 24) % min(pitch, height - y))
-                dots.ellipse((px - radius, py - radius, px + radius, py + radius), fill=255)
+    radius = max(0.65, 1.55 * scale)
+    for x, y in _stippling_centers(shade, scale, seed):
+        dots.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
+
+    # A dot near a silhouette must not spill into completely unshaded paper.
+    # Apply this only to the final ink mask; the placement still uses local tone.
+    ink = ImageChops.multiply(ink, shade.point(lambda value: 255 if value > 8 else 0))
     pigment = Image.new("RGB", image.size, (32, 31, 35))
     page = Image.new("RGB", image.size, (250, 247, 239))
     drawn = Image.composite(pigment, page, ink)
