@@ -191,7 +191,8 @@ GUIDE_WORKFLOW = [
     "'straight' for parallel lines. Contour requires an object/part ID target and "
     "does not recover 3D surface normals; use 'surface' with a rendered "
     "normal pass for camera-space shape directions. For curved hatching, set "
-    "taper (0–1) for lighter, narrower stroke starts and ends. Review the new candidate.",
+    "taper (0–1) for thinner starts and ends; dryness (0–1) for gradual "
+    "ink depletion and short coherent gaps. Review the new candidate.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -915,6 +916,16 @@ _PAINT_ACTION = {
                 "uniform stroke; 1 makes its ends thinner and lighter."
             ),
         },
+        "dryness": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": (
+                "Curved hatching only (tone, contour, surface): 0 keeps the historical "
+                "ink; 1 progressively depletes ink and introduces short deterministic "
+                "breaks along each stroke. Can combine with taper."
+            ),
+        },
     },
     "allOf": [
         {
@@ -931,7 +942,7 @@ _PAINT_ACTION = {
             },
         },
         {
-            "if": {"required": ["taper"]},
+            "if": {"anyOf": [{"required": ["taper"]}, {"required": ["dryness"]}]},
             "then": {
                 "properties": {
                     "op": {"const": "hatch"},
