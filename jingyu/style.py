@@ -48,6 +48,7 @@ def apply_style(
     if preset == "none":
         return image
     rgb = image.convert("RGB")
+    alpha = image.getchannel("A") if "A" in image.getbands() else None
     scale = rgb.width / REFERENCE_WIDTH
     seed = int(spec.get("seed", 0))
     line = float(spec.get("line_width", 1.5)) * scale
@@ -63,7 +64,10 @@ def apply_style(
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
-    return styled if strength >= 1.0 else Image.blend(rgb, styled, strength)
+    result = styled if strength >= 1.0 else Image.blend(rgb, styled, strength)
+    if alpha is not None:
+        result.putalpha(alpha)
+    return result
 
 
 # ------------------------------------------------------------------- building blocks
@@ -77,7 +81,9 @@ def outlines(id_mask: Image.Image | None, size: tuple[int, int], width: float) -
     mask = id_mask.convert("RGBA")
     edges = Image.new("L", mask.size, 0)
     for dx, dy in ((1, 0), (0, 1)):
-        shifted = ImageChops.offset(mask, dx, dy)
+        # A wrapped offset joins opposite image borders, inventing outlines.
+        shifted = Image.new("RGBA", mask.size, (0, 0, 0, 0))
+        shifted.paste(mask, (dx, dy))
         # Ids live in the low bits of the channels: any difference in any channel.
         for channel in ImageChops.difference(mask, shifted).split():
             edges = ImageChops.lighter(edges, channel.point(lambda v: 255 if v else 0))
