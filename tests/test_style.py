@@ -711,3 +711,36 @@ def test_stipple_tiny_and_thin_images_keep_bounds(size: tuple[int, int]) -> None
     first = apply_style(source, None, options)
     assert first.size == size
     assert first.tobytes() == apply_style(source, None, options).tobytes()
+
+
+def test_charcoal_dry_pressure_is_seeded_even_without_paper_grain() -> None:
+    source = Image.new("RGB", (160, 104), (105, 105, 105))
+    spec = {"preset": "charcoal", "paper": 0, "line_width": 0, "seed": 23}
+    first = apply_style(source, None, spec)
+    again = apply_style(source, None, spec)
+    different = apply_style(source, None, {**spec, "seed": 24})
+    assert first.tobytes() == again.tobytes()
+    assert first.tobytes() != different.tobytes()
+    assert len(set(first.getdata())) >= 4
+    assert first.tobytes() != apply_style(source, None, {**spec, "paper": 1}).tobytes()
+
+
+def test_charcoal_preserves_blank_paper_and_shadow_shape_without_lines() -> None:
+    source = Image.new("RGB", (160, 100), (255, 255, 255))
+    ImageDraw.Draw(source).rectangle((80, 0, 159, 99), fill=(25, 25, 25))
+    spec = {"preset": "charcoal", "paper": 0.8, "line_width": 0, "seed": 16}
+    result = apply_style(source, None, spec)
+    assert all(result.getpixel((x, y)) == (248, 245, 237) for y in range(100) for x in range(78))
+    assert sum(result.getpixel((118, 50))) < sum(result.getpixel((30, 50))) - 200
+    assert (
+        result.tobytes()
+        == apply_style(source, Image.new("RGB", source.size, (4, 0, 0)), spec).tobytes()
+    )
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 36), (2, 2), (7, 5), (31, 9)])
+def test_charcoal_handles_tiny_and_narrow_canvases(size: tuple[int, int]) -> None:
+    source = Image.new("RGB", size, (92, 92, 92))
+    output = apply_style(source, None, {"preset": "charcoal", "seed": 5})
+    assert output.size == size
+    assert output.mode == "RGB"
