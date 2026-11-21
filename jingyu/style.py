@@ -1,4 +1,4 @@
-"""Style presets: turn a render into ink, watercolour, oil or cel painting.
+"""Style presets: paint a render with ink, watercolour, oil, cel, charcoal or woodcut.
 
 The render stays physically lit; a style re-interprets it the way a painter
 would, with classic image operations only (no learned model):
@@ -23,7 +23,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from typing import Any
 
-from PIL import Image, ImageChops, ImageEnhance, ImageFilter, ImageMath, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageMath, ImageOps
 
 from .geometry.noise import value_noise
 
@@ -33,6 +33,8 @@ PRESETS: dict[str, str] = {
     "watercolor": "Soft washes that darken at their edges, pigment settling in the paper grain.",
     "oil": "Dabs of paint that keep the big shapes and melt small detail, on canvas.",
     "cel": "Flat bands of light and shadow with bold outlines, like animation.",
+    "charcoal": "Soft monochrome shading, smudged edges and dry pigment on warm paper.",
+    "woodcut": "Dark relief blocks and carved hatching on warm printing paper.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -61,6 +63,10 @@ def apply_style(
         styled = _oil(rgb, scale, paper, seed)
     elif preset == "cel":
         styled = _cel(rgb, id_mask, line, int(spec.get("levels", 3)))
+    elif preset == "charcoal":
+        styled = _charcoal(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "woodcut":
+        styled = _woodcut(rgb, id_mask, line, scale, paper, seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
@@ -265,6 +271,61 @@ def _cel(image: Image.Image, id_mask: Image.Image | None, line: float, levels: i
     lines = outlines(id_mask, image.size, line * 1.6)
     ink = Image.new("RGB", image.size, (20, 20, 24))
     return Image.composite(ink, bands, lines)
+
+
+def _charcoal(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Smudged graphite values, dry grain and scene-aware sketch lines."""
+
+    value = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.45, 1.4 * scale)))
+    pigment = ImageChops.multiply(
+        ImageOps.invert(value), paper_texture(image.size, seed + 23, paper)
+    )
+    if line > 0:
+        detail = ImageChops.lighter(
+            outlines(id_mask, image.size, line), value_edges(image, line, 40)
+        )
+        pigment = ImageChops.lighter(pigment, detail.point(lambda v: v * 3 // 4))
+    page = Image.new("RGB", image.size, (248, 245, 237))
+    coal = Image.new("RGB", image.size, (34, 32, 30))
+    return Image.composite(coal, page, pigment)
+
+
+def _woodcut(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Relief-black shadows with directional cuts through the midtones."""
+
+    shade = ImageOps.invert(
+        ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.5, 0.8 * scale)))
+    )
+    solid = shade.point(lambda value: 255 if value >= 170 else 0)
+    hatch = Image.new("L", image.size, 0)
+    pitch = max(4, round(11 * scale))
+    stroke = max(1, round(1.3 * scale))
+    width, height = image.size
+    draw = ImageDraw.Draw(hatch)
+    for start in range(-height, width + height, pitch):
+        draw.line((start, 0, start + height, height), fill=255, width=stroke)
+    middle = shade.point(lambda value: min(255, max(0, (value - 45) * 3)))
+    ink = ImageChops.lighter(solid, ImageChops.multiply(hatch, middle))
+    if line > 0:
+        ink = ImageChops.lighter(ink, outlines(id_mask, image.size, line * 1.6))
+    paper_color = Image.new("RGB", image.size, (248, 242, 225))
+    dark = Image.new("RGB", image.size, (36, 31, 26))
+    pressed = Image.composite(dark, paper_color, ink)
+    return _on(pressed, paper_texture(image.size, seed + 41, paper * 0.55))
 
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:

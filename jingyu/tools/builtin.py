@@ -180,7 +180,8 @@ GUIDE_WORKFLOW = [
     "object's rendered colour next to its material colour, so colour drift from warm or "
     "cool light shows as a number; view any image with a region to see details up "
     "close.",
-    "For a painted look set render.style (ink, watercolor, oil, cel); the photographic "
+    "For a painted look set render.style (ink, watercolor, oil, cel, charcoal, woodcut); "
+    "the photographic "
     "render stays beside it (view render). For a series, keep a picture charter file and "
     "check_charter each picture against it: it answers with questions, not a score.",
     "For local painted changes after rendering, paint_candidate can wash, hatch or ink "
