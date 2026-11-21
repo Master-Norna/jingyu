@@ -362,6 +362,9 @@ def test_tone_hatching_paints_a_one_pixel_diagonal_object() -> None:
     assert sum(painted.getpixel((x, 95 - x)) != (24, 24, 24) for x in range(96)) >= 8
     assert painted.getpixel((0, 0)) == (24, 24, 24)
     assert painted.getpixel((48, 48)) == (24, 24, 24)
-    assert painted.tobytes() == apply_paint(
-        image, [operation], id_mask=mask, id_map={"objects": {"1": {"object": "sliver"}}}
-    ).tobytes()
+    assert (
+        painted.tobytes()
+        == apply_paint(
+            image, [operation], id_mask=mask, id_map={"objects": {"1": {"object": "sliver"}}}
+        ).tobytes()
+    )
