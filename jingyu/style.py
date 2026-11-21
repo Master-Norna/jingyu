@@ -1,4 +1,4 @@
-"""Style presets: paint a render with ink, watercolour, oil, cel, charcoal or woodcut.
+"""Style presets: interpret physically lit renders using deterministic 2D drawing.
 
 The render stays physically lit; a style re-interprets it the way a painter
 would, with classic image operations only (no learned model):
@@ -35,6 +35,9 @@ PRESETS: dict[str, str] = {
     "cel": "Flat bands of light and shadow with bold outlines, like animation.",
     "charcoal": "Soft monochrome shading, smudged edges and dry pigment on warm paper.",
     "woodcut": "Dark relief blocks and carved hatching on warm printing paper.",
+    "pencil": "Graphite values with layered diagonal and cross hatching on drawing paper.",
+    "stippling": "Tonal drawing made of discrete ink dots whose density follows shadow.",
+    "gouache": "Opaque matte colour planes with softened paint edges and fine pigment grain.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -67,6 +70,12 @@ def apply_style(
         styled = _charcoal(rgb, id_mask, line, scale, paper, seed)
     elif preset == "woodcut":
         styled = _woodcut(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "pencil":
+        styled = _pencil(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "stippling":
+        styled = _stippling(rgb, scale, paper, seed)
+    elif preset == "gouache":
+        styled = _gouache(rgb, scale, paper, seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
@@ -326,6 +335,103 @@ def _woodcut(
     dark = Image.new("RGB", image.size, (36, 31, 26))
     pressed = Image.composite(dark, paper_color, ink)
     return _on(pressed, paper_texture(image.size, seed + 41, paper * 0.55))
+
+
+
+def _diagonal_hatch(
+    size: tuple[int, int], pitch: int, thickness: int, descending: bool
+) -> Image.Image:
+    """Small, consistent graphite hatches, with no wrapping at image borders."""
+
+    width, height = size
+    lines = Image.new("L", size, 0)
+    draw = ImageDraw.Draw(lines)
+    for offset in range(-height, width + height, pitch):
+        if descending:
+            draw.line((offset, 0, offset + height, height), fill=255, width=thickness)
+        else:
+            draw.line((offset, 0, offset - height, height), fill=255, width=thickness)
+    return lines
+
+
+def _pencil(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Build graphite shading from a light grey underdrawing and crossed hatches."""
+
+    value = ImageOps.grayscale(image)
+    shadow = ImageOps.invert(value.filter(ImageFilter.GaussianBlur(max(0.4, scale))))
+    pitch = max(3, round(9 * scale))
+    thickness = max(1, round(1.1 * scale))
+    underdrawing = shadow.point(lambda v: v // 3)
+    primary = ImageChops.multiply(
+        _diagonal_hatch(image.size, pitch, thickness, True),
+        shadow.point(lambda v: min(255, max(0, (v - 15) * 2))),
+    )
+    crossed = ImageChops.multiply(
+        _diagonal_hatch(image.size, pitch, thickness, False),
+        shadow.point(lambda v: min(255, max(0, (v - 120) * 3))),
+    )
+    graphite = ImageChops.lighter(underdrawing, ImageChops.lighter(primary, crossed))
+    if line > 0:
+        detail = ImageChops.lighter(
+            outlines(id_mask, image.size, line), value_edges(image, line, 45)
+        )
+        graphite = ImageChops.lighter(graphite, detail.point(lambda v: v * 4 // 5))
+    grain = paper_texture(image.size, seed + 61, paper)
+    graphite = ImageChops.multiply(graphite, grain)
+    page = Image.new("RGB", image.size, (249, 247, 240))
+    dark = Image.new("RGB", image.size, (36, 35, 37))
+    return Image.composite(dark, page, graphite)
+
+
+def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Use distinct ink dots, not continuous hatches or whole-image pixel noise."""
+
+    width, height = image.size
+    pitch = max(4, round(9 * scale))
+    radius = max(0.65, 1.9 * scale)
+    shade = ImageOps.invert(ImageOps.grayscale(image))
+    ink = Image.new("L", image.size, 0)
+    dots = ImageDraw.Draw(ink)
+    for y in range(0, height, pitch):
+        for x in range(0, width, pitch):
+            darkness = shade.getpixel(
+                (min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))
+            )
+            for mark in range(3):
+                key = (
+                    (x + 1) * 73856093
+                    ^ (y + 1) * 19349663
+                    ^ (seed + mark + 1) * 83492791
+                ) & 0xFFFFFFFF
+                if (key & 0xFFFF) / 65535 >= darkness / 255 * (0.92 - mark * 0.08):
+                    continue
+                px = min(width - 1, x + (key >> 16) % min(pitch, width - x))
+                py = min(height - 1, y + (key >> 24) % min(pitch, height - y))
+                dots.ellipse(
+                    (px - radius, py - radius, px + radius, py + radius), fill=255
+                )
+    pigment = Image.new("RGB", image.size, (32, 31, 35))
+    page = Image.new("RGB", image.size, (250, 247, 239))
+    drawn = Image.composite(pigment, page, ink)
+    return _on(drawn, paper_texture(image.size, seed + 71, paper * 0.6))
+
+
+def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Opaque, softly broken matte colour, unlike translucent watercolor washes."""
+
+    dabbed = kuwahara(image, max(2, round(5 * scale)))
+    planes = flatten(dabbed, 5, 0.6)
+    painted = Image.blend(dabbed, planes, 0.78)
+    painted = ImageEnhance.Color(painted).enhance(1.13)
+    matte = painted.filter(ImageFilter.GaussianBlur(max(0.2, 0.45 * scale)))
+    return _on(matte, paper_texture(image.size, seed + 83, paper * 0.45))
 
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
