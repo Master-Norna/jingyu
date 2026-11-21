@@ -665,10 +665,7 @@ def test_dry_stroke_depletes_ink_and_has_coherent_gaps() -> None:
     _draw_dry_stroke(ImageDraw.Draw(repeat), points, width=5, taper=0, dryness=1)
     assert dry.tobytes() == repeat.tobytes()
     assert 0 < dry.getpixel((150, 24)) < dry.getpixel((10, 24))
-    assert any(
-        wet.getpixel((x, 24)) > 0 and dry.getpixel((x, 24)) == 0
-        for x in range(70, 156)
-    )
+    assert any(wet.getpixel((x, 24)) > 0 and dry.getpixel((x, 24)) == 0 for x in range(70, 156))
 
 
 @pytest.mark.parametrize("flow", ["tone", "contour", "surface"])
