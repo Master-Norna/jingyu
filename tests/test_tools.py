@@ -175,7 +175,7 @@ def test_get_scene_schema(ctx: ToolContext) -> None:
     data = _invoke(ctx, "get_scene_schema").data
     assert data["schema_id"] == "jingyu.scene.v1"
     assert data["json_schema"] == scene_schema()
-    presets = data["json_schema"]["properties"]["render"]["properties"]["style"]["properties"]
+    presets = data["json_schema"]["$defs"]["render"]["properties"]["style"]["properties"]
     assert presets["preset"]["enum"] == list(PRESETS)
     assert data["example"] == minimal_scene()
 
