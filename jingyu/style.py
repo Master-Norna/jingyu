@@ -697,9 +697,7 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
     return _on(painted, paper_texture(image.size, seed + 83, paper * 0.35))
 
 
-def _pastel_strokes(
-    value: Image.Image, scale: float, seed: int
-) -> tuple[Image.Image, Image.Image]:
+def _pastel_strokes(value: Image.Image, scale: float, seed: int) -> tuple[Image.Image, Image.Image]:
     """Build separate contour-following rub and broken chalk deposition masks."""
 
     rub = Image.new("L", value.size, 0)
@@ -762,18 +760,14 @@ def _pastel(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     # Powder binds to the paper tooth unevenly. This fixed internal grain
     # remains even when the optional final paper texture is disabled.
     tooth = paper_texture(image.size, seed + 197, 2.15)
-    rub = ImageChops.multiply(
-        rub.filter(ImageFilter.GaussianBlur(max(0.35, 0.75 * scale))), tooth
-    )
+    rub = ImageChops.multiply(rub.filter(ImageFilter.GaussianBlur(max(0.35, 0.75 * scale))), tooth)
     chalk = ImageChops.multiply(chalk, tooth)
 
     muted = ImageEnhance.Brightness(base).enhance(0.88)
     base = Image.composite(muted, base, rub)
     # Calculate chalk colour at the destination, not from a stroke centre:
     # neighbouring differently coloured objects cannot exchange pigments.
-    coloured_powder = Image.blend(
-        ImageEnhance.Color(image).enhance(1.08), cream, 0.16
-    )
+    coloured_powder = Image.blend(ImageEnhance.Color(image).enhance(1.08), cream, 0.16)
     painted = Image.composite(coloured_powder, base, chalk)
 
     # Restore the local source hue on sharp seams where soft blending might
