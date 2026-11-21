@@ -122,7 +122,7 @@ def test_mcp_style_catalogue_matches_schema_and_validates_papercut(workspace: Wo
         schema = await client.call_tool("get_scene_schema", {})
         assert guide.is_error is False and schema.is_error is False
         available = guide.structured_content["style_presets"]
-        style_prop = schema.structured_content["json_schema"]["properties"]["render"]["properties"][
+        style_prop = schema.structured_content["json_schema"]["$defs"]["render"]["properties"][
             "style"
         ]["properties"]["preset"]
         assert set(available) == set(style_prop["enum"])
