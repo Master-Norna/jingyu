@@ -12,6 +12,7 @@ from PIL import Image, ImageChops, ImageDraw
 from jingyu.style import (
     PRESETS,
     _colour_edges,
+    _pastel_strokes,
     _stippling_centers,
     apply_style,
     flatten,
@@ -782,3 +783,55 @@ def test_gouache_handles_tiny_and_narrow_canvases(size: tuple[int, int]) -> None
     assert result.size == size
     assert result.getchannel("A").tobytes() == source.getchannel("A").tobytes()
     assert result.tobytes() == apply_style(source, None, spec).tobytes()
+
+
+def test_pastel_chalk_strokes_are_seeded_without_external_paper_texture() -> None:
+    source = Image.new("RGB", (192, 112), (67, 102, 178))
+    spec = {"preset": "pastel", "paper": 0, "seed": 31}
+    first = apply_style(source, None, spec)
+    assert first.tobytes() == apply_style(source, None, spec).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**spec, "seed": 32}).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**spec, "paper": 1}).tobytes()
+    assert len(set(first.getdata())) > 12
+    assert first.getpixel((100, 50))[2] > first.getpixel((100, 50))[0]
+    assert source.getpixel((100, 50)) == (67, 102, 178)
+
+
+def test_pastel_strokes_follow_local_value_contours_and_have_broken_layers() -> None:
+    side_to_side = Image.new("L", (100, 100))
+    top_to_bottom = Image.new("L", (100, 100))
+    side_to_side.putdata([30 + x * 2 for y in range(100) for x in range(100)])
+    top_to_bottom.putdata([30 + y * 2 for y in range(100) for x in range(100)])
+    rubbed_x, chalk_x = _pastel_strokes(side_to_side, 1.0, 9)
+    rubbed_y, chalk_y = _pastel_strokes(top_to_bottom, 1.0, 9)
+    assert rubbed_x.tobytes() != rubbed_y.tobytes()
+    assert chalk_x.tobytes() != chalk_y.tobytes()
+    assert max(chalk_x.getextrema()) > 0
+    assert max(rubbed_x.getextrema()) > 0
+    assert sum(1 for v in chalk_x.getdata() if v) < sum(1 for v in rubbed_x.getdata() if v)
+
+
+def test_pastel_preserves_abutting_hues_and_is_not_watercolour() -> None:
+    source = Image.new("RGB", (180, 96), (34, 85, 190))
+    ImageDraw.Draw(source).rectangle((90, 0, 179, 95), fill=(195, 63, 38))
+    spec = {"preset": "pastel", "paper": 0, "seed": 21}
+    result = apply_style(source, None, spec)
+    for y in (20, 48, 77):
+        blue = result.getpixel((89, y))
+        red = result.getpixel((90, y))
+        assert blue[2] > blue[0] + 70
+        assert red[0] > red[2] + 70
+    assert (
+        result.tobytes()
+        != apply_style(source, None, {"preset": "watercolor", "paper": 0, "seed": 21}).tobytes()
+    )
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 25), (2, 2), (7, 5), (31, 9)])
+def test_pastel_preserves_alpha_on_narrow_canvases(size: tuple[int, int]) -> None:
+    source = Image.new("RGBA", size, (80, 120, 170, 137))
+    spec = {"preset": "pastel", "paper": 0, "seed": 6}
+    image = apply_style(source, None, spec)
+    assert image.size == source.size
+    assert image.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+    assert image.tobytes() == apply_style(source, None, spec).tobytes()
