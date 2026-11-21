@@ -12,6 +12,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Mapping, Sequence
+from itertools import pairwise
 from typing import Any, cast
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
@@ -290,7 +291,9 @@ def _hatch(
     if flow == "straight":
         lines = _straight_hatch_lines(image.size, spacing, width, angle)
     elif flow == "tone":
-        lines = _tone_hatch_lines(image, target, spacing, width, angle, taper=taper, dryness=dryness)
+        lines = _tone_hatch_lines(
+            image, target, spacing, width, angle, taper=taper, dryness=dryness
+        )
     elif flow == "contour":
         lines = _tone_hatch_lines(
             image, target, spacing, width, angle, contour=True, taper=taper, dryness=dryness
@@ -466,7 +469,7 @@ def _draw_dry_stroke(
         return
 
     distances = [0.0]
-    for start, end in zip(points, points[1:]):
+    for start, end in pairwise(points):
         distances.append(distances[-1] + math.dist(start, end))
     total = max(1.0, distances[-1])
     grain_length = max(3.0, width)
