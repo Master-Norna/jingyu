@@ -48,7 +48,9 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 
 已有候选可以继续用 `paint_candidate` 进行局部处理：`wash` 铺色、`hatch` 排线、
 `edge_ink` 勾边。目标可以是对象、装配部件，或像素 / 归一化坐标区域。每次绘画
-生成新候选，不修改原图；结果可以用 `view_candidate` 对比。
+生成新候选，不修改原图；结果可以用 `view_candidate` 对比。排线默认采用固定方向
+（`flow: "straight"`）；也可设为 `flow: "tone"`，让短笔触沿明暗等值线弯曲，
+不需要模型逐笔指定坐标。这是屏幕空间的明暗推断，并非物体的真实三维法线。
 
 ```json
 {
@@ -57,7 +59,7 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
   "operations": [
     {"op": "wash", "target": {"object": "vase"}, "color": "#ba936e", "strength": 0.3},
     {"op": "hatch", "target": {"object": "vase"}, "color": "#302a25",
-     "angle": 45, "spacing": 8, "width": 1.5}
+     "flow": "tone", "angle": 45, "spacing": 8, "width": 1.5}
   ]
 }
 ```
