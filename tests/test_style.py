@@ -64,16 +64,12 @@ def test_outlines_do_not_wrap_across_opposite_image_borders() -> None:
 
 @pytest.mark.parametrize("preset", [p for p in PRESETS if p != "none"])
 @pytest.mark.parametrize("strength", [0.5, 1.0])
-def test_style_preserves_transparent_background(
-    preset: str, strength: float
-) -> None:
+def test_style_preserves_transparent_background(preset: str, strength: float) -> None:
     source = _render().convert("RGBA")
     source.putalpha(Image.new("L", source.size, 0))
     source.putpixel((10, 10), (30, 80, 150, 128))
     source.putpixel((30, 20), (90, 40, 20, 255))
-    painted = apply_style(
-        source, synthetic_mask(), {"preset": preset, "strength": strength}
-    )
+    painted = apply_style(source, synthetic_mask(), {"preset": preset, "strength": strength})
     assert painted.mode == "RGBA"
     assert painted.getchannel("A").tobytes() == source.getchannel("A").tobytes()
 
