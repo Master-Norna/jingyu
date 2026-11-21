@@ -667,5 +667,3 @@ def test_embroidery_keeps_ink_colours_inside_quantized_regions() -> None:
     assert left and right
     assert all(r > b for r, _, b in left)
     assert all(b > r for r, _, b in right)
-
-
