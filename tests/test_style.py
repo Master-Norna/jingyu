@@ -439,3 +439,71 @@ def test_new_media_keep_alpha_strength_seed_and_existing_render(preset: str) -> 
     assert half.getchannel("A").tobytes() == alpha.tobytes()
     assert image.convert("RGB").tobytes() == _render().tobytes()
     assert original != image.tobytes()
+
+
+@pytest.mark.parametrize("preset", ["frottage", "embroidery", "glaze"])
+def test_material_media_validate_with_scene_schema(preset: str) -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    scene = minimal_scene()
+    scene["render"]["style"] = {"preset": preset, "seed": 13}
+    assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
+
+
+def test_frottage_has_relief_and_more_ink_on_dark_surfaces() -> None:
+    source = Image.new("RGB", (120, 70), (240, 240, 240))
+    ImageDraw.Draw(source).rectangle((60, 0, 119, 69), fill=(25, 25, 25))
+    spec = {"preset": "frottage", "paper": 0, "seed": 13}
+    first = apply_style(source, None, spec)
+    second = apply_style(source, None, {**spec, "seed": 14})
+    assert first.tobytes() != second.tobytes()
+    assert all(max(pixel) - min(pixel) < 25 for pixel in first.getdata())
+    left = sum(first.getpixel((x, y))[0] for y in range(10, 60) for x in range(10, 50))
+    right = sum(first.getpixel((x, y))[0] for y in range(10, 60) for x in range(70, 110))
+    assert right < left * 0.70
+    dark_values = {first.getpixel((x, y)) for y in range(10, 60) for x in range(70, 110)}
+    assert len(dark_values) >= 3  # rubbing plus separate directional wax/graphite marks
+
+
+def test_embroidery_preserves_colour_regions_with_visible_stitches_and_cloth() -> None:
+    source = Image.new("RGB", (100, 70), (35, 90, 170))
+    ImageDraw.Draw(source).rectangle((50, 0, 99, 69), fill=(195, 61, 30))
+    first = apply_style(source, None, {"preset": "embroidery", "paper": 0})
+    left = first.getpixel((15, 15))
+    right = first.getpixel((65, 15))
+    assert left[2] > left[0] or first.getpixel((12, 12))[2] > 100
+    assert right[0] > right[2] or first.getpixel((62, 12))[0] > 100
+    assert len(set(first.getdata())) >= 5  # dark thread, highlight and cloth
+    assert any(pixel == (231, 223, 204) for pixel in first.getdata())
+
+
+def test_glaze_has_colour_pools_and_seeded_reflections() -> None:
+    source = Image.new("RGB", (120, 72), (35, 100, 178))
+    ImageDraw.Draw(source).rectangle((55, 10, 110, 63), fill=(184, 72, 54))
+    base = {"preset": "glaze", "paper": 0, "seed": 11}
+    first = apply_style(source, None, base)
+    repeat = apply_style(source, None, base)
+    second = apply_style(source, None, {**base, "seed": 12})
+    assert first.tobytes() == repeat.tobytes()
+    assert first.tobytes() != second.tobytes()
+    assert first.getpixel((20, 30))[2] > first.getpixel((20, 30))[0]
+    assert first.getpixel((77, 40))[0] > first.getpixel((77, 40))[2]
+    assert len(set(first.getdata())) > 10
+
+
+@pytest.mark.parametrize("preset", ["frottage", "embroidery", "glaze"])
+def test_material_media_preserve_alpha_strength_and_source(preset: str) -> None:
+    source = _render().convert("RGBA")
+    alpha = Image.new("L", source.size, 0)
+    ImageDraw.Draw(alpha).rectangle((12, 9, 51, 38), fill=128)
+    source.putalpha(alpha)
+    before = source.tobytes()
+    opts = {"preset": preset, "seed": 31, "paper": 0.75}
+    full = apply_style(source, synthetic_mask(), opts)
+    repeated = apply_style(source, synthetic_mask(), opts)
+    half = apply_style(source, synthetic_mask(), {**opts, "strength": 0.5})
+    assert full.tobytes() == repeated.tobytes()
+    assert full.tobytes() != half.tobytes()
+    assert full.getchannel("A").tobytes() == alpha.tobytes()
+    assert half.getchannel("A").tobytes() == alpha.tobytes()
+    assert source.tobytes() == before
