@@ -869,9 +869,7 @@ def _crayon_wax_masks(
         for y in range(0, height, pitch):
             for x in range(0, width, pitch):
                 key = (
-                    (x + 1) * 73856093
-                    ^ (y + 1) * 19349663
-                    ^ (seed + 149 + layer * 31) * 83492791
+                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 149 + layer * 31) * 83492791
                 ) & 0xFFFFFFFF
                 px = min(width - 1, x + (key >> 8) % min(pitch, width - x))
                 py = min(height - 1, y + (key >> 16) % min(pitch, height - y))
@@ -922,9 +920,7 @@ def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     under, over = _crayon_wax_masks(image, scale, seed)
     # Each mark takes the colour at its destination pixel, so crossing a
     # boundary never paints one object's pigment onto another object.
-    first_wax = ImageEnhance.Color(image).enhance(1.12).point(
-        lambda pixel: max(0, pixel - 10)
-    )
+    first_wax = ImageEnhance.Color(image).enhance(1.12).point(lambda pixel: max(0, pixel - 10))
     second_wax = Image.blend(ImageEnhance.Color(image).enhance(1.08), sheet, 0.13)
     drawing = Image.composite(first_wax, sheet, under)
     drawing = Image.composite(second_wax, drawing, over)
