@@ -459,9 +459,7 @@ def _charcoal(
     dry = ImageChops.multiply(dry, shade.point(lambda value: min(255, value * 2)))
     pigment = ImageChops.add(pigment, dry)
     # A pure-white source area stays unmarked even beside a dark object.
-    pigment = ImageChops.multiply(
-        pigment, shade.point(lambda value: 255 if value > 8 else 0)
-    )
+    pigment = ImageChops.multiply(pigment, shade.point(lambda value: 255 if value > 8 else 0))
     if line > 0:
         detail = ImageChops.lighter(
             outlines(id_mask, image.size, line), value_edges(image, line, 40)
