@@ -53,9 +53,7 @@ def frottage(image: Image.Image, scale: float, paper: Image.Image, seed: int) ->
 def embroidery(image: Image.Image, scale: float, paper: Image.Image, seed: int) -> Image.Image:
     """Form the colour image from separate diagonal thread stitches on cloth."""
 
-    quantized = image.quantize(
-        colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
-    )
+    quantized = image.quantize(colors=8, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     flat = quantized.convert("RGB")
     fabric = Image.new("RGB", image.size, (231, 223, 204))
     draw = ImageDraw.Draw(fabric)
@@ -115,9 +113,7 @@ def glaze(image: Image.Image, scale: float, paper: Image.Image, seed: int) -> Im
                 fill=min(155, 55 + light // 3),
                 width=max(1, round(scale)),
             )
-    glossy = Image.composite(
-        Image.new("RGB", image.size, (245, 248, 250)), covered, shine
-    )
+    glossy = Image.composite(Image.new("RGB", image.size, (245, 248, 250)), covered, shine)
     return _on(glossy, paper)
 
 
