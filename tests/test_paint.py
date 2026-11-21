@@ -369,6 +369,7 @@ def test_tone_hatching_paints_a_one_pixel_diagonal_object() -> None:
         ).tobytes()
     )
 
+
 def test_contour_field_tracks_object_outline_not_luminance() -> None:
     mask = Image.new("L", (96, 96), 0)
     ImageDraw.Draw(mask).ellipse((20, 20, 76, 76), fill=255)
