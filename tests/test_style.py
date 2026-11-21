@@ -808,9 +808,7 @@ def test_pastel_strokes_follow_local_value_contours_and_have_broken_layers() -> 
     assert chalk_x.tobytes() != chalk_y.tobytes()
     assert max(chalk_x.getextrema()) > 0
     assert max(rubbed_x.getextrema()) > 0
-    assert sum(1 for v in chalk_x.getdata() if v) < sum(
-        1 for v in rubbed_x.getdata() if v
-    )
+    assert sum(1 for v in chalk_x.getdata() if v) < sum(1 for v in rubbed_x.getdata() if v)
 
 
 def test_pastel_preserves_abutting_hues_and_is_not_watercolour() -> None:
@@ -823,9 +821,10 @@ def test_pastel_preserves_abutting_hues_and_is_not_watercolour() -> None:
         red = result.getpixel((90, y))
         assert blue[2] > blue[0] + 70
         assert red[0] > red[2] + 70
-    assert result.tobytes() != apply_style(
-        source, None, {"preset": "watercolor", "paper": 0, "seed": 21}
-    ).tobytes()
+    assert (
+        result.tobytes()
+        != apply_style(source, None, {"preset": "watercolor", "paper": 0, "seed": 21}).tobytes()
+    )
 
 
 @pytest.mark.parametrize("size", [(1, 1), (1, 25), (2, 2), (7, 5), (31, 9)])
