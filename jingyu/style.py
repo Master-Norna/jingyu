@@ -250,14 +250,16 @@ def _cel(image: Image.Image, id_mask: Image.Image | None, line: float, levels: i
 
 
 def _charcoal(
-    image: Image.Image, id_mask: Image.Image | None, line: float, scale: float,
-    paper: float, seed: int,
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
 ) -> Image.Image:
     """Smudged graphite values, dry grain and scene-aware sketch lines."""
 
-    value = ImageOps.grayscale(image).filter(
-        ImageFilter.GaussianBlur(max(0.45, 1.4 * scale))
-    )
+    value = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.45, 1.4 * scale)))
     pigment = ImageChops.multiply(
         ImageOps.invert(value), paper_texture(image.size, seed + 23, paper)
     )
@@ -272,15 +274,17 @@ def _charcoal(
 
 
 def _woodcut(
-    image: Image.Image, id_mask: Image.Image | None, line: float, scale: float,
-    paper: float, seed: int,
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
 ) -> Image.Image:
     """Relief-black shadows with directional cuts through the midtones."""
 
     shade = ImageOps.invert(
-        ImageOps.grayscale(image).filter(
-            ImageFilter.GaussianBlur(max(0.5, 0.8 * scale))
-        )
+        ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.5, 0.8 * scale)))
     )
     solid = shade.point(lambda value: 255 if value >= 170 else 0)
     hatch = Image.new("L", image.size, 0)
