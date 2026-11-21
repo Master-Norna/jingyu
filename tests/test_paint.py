@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import math
 
 import pytest
 from helpers import SYNTHETIC_ID_MAP_OBJECTS, CandidateFactory
@@ -10,7 +11,7 @@ from PIL import Image, ImageDraw
 
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
 from jingyu.errors import JingyuError
-from jingyu.paint import apply_paint, paint_candidate
+from jingyu.paint import _tone_tangent, apply_paint, paint_candidate
 from jingyu.tools.builtin import REGISTRY
 from jingyu.tools.registry import ToolContext
 
@@ -239,3 +240,100 @@ def test_tool_contract_returns_image_and_rejects_bad_actions(
         with pytest.raises(JingyuError) as exc:
             REGISTRY.invoke("paint_candidate", {**arguments, "operations": [invalid]}, ctx)
         assert exc.value.code == "tool.invalid_arguments"
+
+
+def test_tone_tangent_follows_isoluminance_and_preserves_flat_fallback() -> None:
+    x_gradient = Image.new("L", (40, 40))
+    x_gradient.putdata([x * 6 for _ in range(40) for x in range(40)])
+    y_gradient = Image.new("L", (40, 40))
+    y_gradient.putdata([y * 6 for y in range(40) for _ in range(40)])
+
+    tangent_x = _tone_tangent(x_gradient, 20, 20, (1.0, 0.0))
+    tangent_y = _tone_tangent(y_gradient, 20, 20, (1.0, 0.0))
+    assert abs(tangent_x[0]) < 0.01 and abs(tangent_x[1]) > 0.99
+    assert tangent_y[0] > 0.99 and abs(tangent_y[1]) < 0.01
+
+    flat = Image.new("L", (40, 40), 120)
+    assert _tone_tangent(flat, 20, 20, (0.6, 0.8)) == (0.6, 0.8)
+
+
+def test_tone_hatching_is_local_curved_and_repeatable() -> None:
+    image = Image.new("RGB", (96, 96))
+    pixels = []
+    for y in range(96):
+        for x in range(96):
+            value = min(245, round(8 + 3 * math.hypot(x - 48, y - 48)))
+            pixels.append((value, value, value))
+    image.putdata(pixels)
+    base = {
+        "op": "hatch",
+        "target": {"region": {"x0": 12, "y0": 12, "x1": 84, "y1": 84}},
+        "color": "#141414",
+        "spacing": 7,
+        "width": 1.5,
+        "strength": 1,
+    }
+
+    painted = apply_paint(image, [{**base, "flow": "tone"}])
+    repeated = apply_paint(image, [{**base, "flow": "tone"}])
+    straight = apply_paint(image, [{**base, "flow": "straight"}])
+    legacy = apply_paint(image, [base])
+    assert painted.tobytes() == repeated.tobytes()
+    assert painted.tobytes() != image.tobytes()
+    assert painted.tobytes() != straight.tobytes()
+    assert straight.tobytes() == legacy.tobytes()
+    assert painted.getpixel((4, 4)) == image.getpixel((4, 4))
+    assert painted.getpixel((91, 91)) == image.getpixel((91, 91))
+
+
+def test_tone_flow_is_recorded_and_rejects_other_paint_actions(
+    make_candidate: CandidateFactory,
+) -> None:
+    source = make_candidate()
+    ctx = ToolContext(make_candidate.workspace)
+    hatch = {
+        "op": "hatch",
+        "target": {"object": "vase"},
+        "flow": "tone",
+        "spacing": 5,
+        "color": "#222222",
+    }
+    result = REGISTRY.invoke(
+        "paint_candidate",
+        {"candidate_id": source.id, "operations": [hatch], "return_image": False},
+        ctx,
+    )
+    child = CandidateStore(make_candidate.workspace).open(result.data["candidate_id"])
+    assert child.receipt["paint"]["operations"][0]["flow"] == "tone"
+    assert CandidateStore(make_candidate.workspace).verify(child) == []
+    assert CandidateStore(make_candidate.workspace).verify(source) == []
+
+    for invalid in [
+        {**hatch, "flow": "unknown"},
+        {"op": "wash", "target": {"object": "vase"}, "flow": "tone"},
+    ]:
+        with pytest.raises(JingyuError) as exc:
+            REGISTRY.invoke(
+                "paint_candidate",
+                {"candidate_id": source.id, "operations": [invalid]},
+                ctx,
+            )
+        assert exc.value.code == "tool.invalid_arguments"
+
+
+def test_tone_hatching_bounds_the_number_of_strokes() -> None:
+    image = Image.new("RGB", (1200, 1200), (60, 60, 60))
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(
+            image,
+            [
+                {
+                    "op": "hatch",
+                    "flow": "tone",
+                    "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
+                    "spacing": 2,
+                }
+            ],
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+    assert "spacing" in (exc.value.hint or "")
