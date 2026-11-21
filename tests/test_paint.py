@@ -67,8 +67,14 @@ def test_paint_assembly_part_selection(make_candidate: CandidateFactory) -> None
     child = paint_candidate(
         make_candidate.workspace,
         source.id,
-        [{"op": "wash", "target": {"part": {"object": "vase", "part": "body"}},
-          "color": "#221100", "strength": 1}],
+        [
+            {
+                "op": "wash",
+                "target": {"part": {"object": "vase", "part": "body"}},
+                "color": "#221100",
+                "strength": 1,
+            }
+        ],
     )
     with Image.open(child.image_path) as image:
         assert image.getpixel((35, 20)) == (34, 17, 0)
@@ -76,8 +82,13 @@ def test_paint_assembly_part_selection(make_candidate: CandidateFactory) -> None
         paint_candidate(
             make_candidate.workspace,
             source.id,
-            [{"op": "wash", "target": {"part": {"object": "vase", "part": "lip"}},
-              "color": "#ffffff"}],
+            [
+                {
+                    "op": "wash",
+                    "target": {"part": {"object": "vase", "part": "lip"}},
+                    "color": "#ffffff",
+                }
+            ],
         )
     assert exc.value.code == "spec.unknown_reference"
 
@@ -96,7 +107,8 @@ def test_unknown_hidden_and_missing_mask_fail_without_a_candidate(
     ]:
         with pytest.raises(JingyuError) as exc:
             paint_candidate(
-                make_candidate.workspace, source_id,
+                make_candidate.workspace,
+                source_id,
                 [{"op": "edge_ink", "target": target, "color": "#000000"}],
             )
         assert exc.value.code == code
@@ -109,10 +121,17 @@ def test_hatching_dark_values_but_not_whites() -> None:
     ImageDraw.Draw(source).rectangle((0, 0, 39, 59), fill=(30, 30, 30))
     changed = apply_paint(
         source,
-        [{
-            "op": "hatch", "target": {"region": {"x0": 0, "y0": 0, "x1": 80, "y1": 60}},
-            "color": "#ffffff", "angle": 90, "spacing": 5, "width": 2, "strength": 1,
-        }],
+        [
+            {
+                "op": "hatch",
+                "target": {"region": {"x0": 0, "y0": 0, "x1": 80, "y1": 60}},
+                "color": "#ffffff",
+                "angle": 90,
+                "spacing": 5,
+                "width": 2,
+                "strength": 1,
+            }
+        ],
     )
     assert changed.getpixel((50, 20)) == source.getpixel((50, 20))
     assert any(changed.getpixel((x, 20)) != source.getpixel((x, 20)) for x in range(40))
@@ -122,11 +141,15 @@ def test_ink_stays_inside_target_edges() -> None:
     source = Image.new("RGB", (40, 30), "white")
     changed = apply_paint(
         source,
-        [{
-            "op": "edge_ink", "target": {
-                "region": {"x0": 8, "y0": 6, "x1": 28, "y1": 24}
-            }, "color": "#000000", "width": 2, "strength": 1,
-        }],
+        [
+            {
+                "op": "edge_ink",
+                "target": {"region": {"x0": 8, "y0": 6, "x1": 28, "y1": 24}},
+                "color": "#000000",
+                "width": 2,
+                "strength": 1,
+            }
+        ],
     )
     assert changed.getpixel((8, 12)) == (0, 0, 0)
     assert changed.getpixel((18, 12)) == (255, 255, 255)
@@ -138,14 +161,17 @@ def test_paint_preserves_rgba_and_is_repeatable() -> None:
     source.putpixel((3, 3), (120, 170, 210, 0))
     actions = [
         {
-            "op": "hatch", "target": {
-                "region": {"x0": 0, "y0": 0, "x1": 32, "y1": 24}
-            }, "color": "#222222", "angle": 25, "spacing": 4,
+            "op": "hatch",
+            "target": {"region": {"x0": 0, "y0": 0, "x1": 32, "y1": 24}},
+            "color": "#222222",
+            "angle": 25,
+            "spacing": 4,
         },
         {
-            "op": "wash", "target": {
-                "region": {"x0": 0, "y0": 0, "x1": 32, "y1": 24}
-            }, "color": "#663300", "strength": 0.2,
+            "op": "wash",
+            "target": {"region": {"x0": 0, "y0": 0, "x1": 32, "y1": 24}},
+            "color": "#663300",
+            "strength": 0.2,
         },
     ]
     first = apply_paint(source, actions)
@@ -173,23 +199,22 @@ def test_tool_contract_returns_image_and_rejects_bad_actions(
     ctx = ToolContext(make_candidate.workspace)
     arguments = {
         "candidate_id": source.id,
-        "operations": [
-            {"op": "wash", "target": {"object": "vase"}, "color": "#abcdef"}
-        ],
+        "operations": [{"op": "wash", "target": {"object": "vase"}, "color": "#abcdef"}],
     }
     result = REGISTRY.invoke("paint_candidate", arguments, ctx)
     assert result.data["derived_from"]["candidate_id"] == source.id
     assert len(result.images) == 1
-    assert CandidateStore(make_candidate.workspace).verify(
-        CandidateStore(make_candidate.workspace).open(result.data["candidate_id"])
-    ) == []
+    assert (
+        CandidateStore(make_candidate.workspace).verify(
+            CandidateStore(make_candidate.workspace).open(result.data["candidate_id"])
+        )
+        == []
+    )
     for invalid in [
         {"op": "spray", "target": {"object": "vase"}},
         {"op": "wash", "target": {"region": {"x0": 1}}, "color": "#123456"},
         {"op": "wash", "target": {"object": "vase"}, "color": "red"},
     ]:
         with pytest.raises(JingyuError) as exc:
-            REGISTRY.invoke(
-                "paint_candidate", {**arguments, "operations": [invalid]}, ctx
-            )
+            REGISTRY.invoke("paint_candidate", {**arguments, "operations": [invalid]}, ctx)
         assert exc.value.code == "tool.invalid_arguments"
