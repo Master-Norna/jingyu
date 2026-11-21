@@ -22,6 +22,7 @@ from .candidate import (
     IMAGE_NAME,
     LIGHT_MAP_NAME,
     LIGHT_MASK_NAME,
+    NORMAL_MASK_NAME,
     RENDER_NAME,
     SCENE_NAME,
     Candidate,
@@ -90,7 +91,7 @@ def render_scene(
                 "scene": normalized,
                 "output_dir": str(staging),
                 "overrides": quality_overrides(normalized["render"], quality),
-                "passes": {"id_mask": True, "light": True},
+                "passes": {"id_mask": True, "light": True, "normal": True},
             },
             staging,
             timeout_s=timeout_s,
@@ -172,6 +173,9 @@ def _check_outputs(staging: Path, response: Mapping[str, Any]) -> None:
     if not isinstance(outputs, Mapping) or outputs.get("image") != IMAGE_NAME:
         raise JingyuError("blender.bad_response", "the worker reported no image output")
     expected = [IMAGE_NAME, LOG_NAME]
+    if outputs.get("normal_mask") != NORMAL_MASK_NAME:
+        raise JingyuError("blender.bad_response", "the worker reported no normal mask")
+    expected.append(NORMAL_MASK_NAME)
     if "id_mask" in outputs:
         if outputs["id_mask"] != ID_MASK_NAME or not isinstance(response.get("id_map"), Mapping):
             raise JingyuError("blender.bad_response", "id mask output without an id map")

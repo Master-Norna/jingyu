@@ -79,6 +79,9 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
     overrides = request.get("overrides") or {}
     want_id_mask = bool((request.get("passes") or {}).get("id_mask", True))
     want_light = bool((request.get("passes") or {}).get("light", False))
+    want_normal = bool((request.get("passes") or {}).get("normal", False))
+    if want_normal and not want_id_mask:
+        raise JingyuError("worker.bad_request", "normal pass requires the exact-ID pass")
 
     timings: dict[str, int] = {}
     started = time.perf_counter()
@@ -119,6 +122,13 @@ def _render(request: dict[str, Any]) -> dict[str, Any]:
         id_map = passes.render_id_mask(scene, built.seen, id_mask)
         outputs["id_mask"] = id_mask.name
         timings["id_mask_ms"] = _ms_since(mark)
+
+    if want_normal:
+        mark = time.perf_counter()
+        normal_mask = output_dir / "normal_mask.png"
+        passes.render_normal_mask(scene, normal_mask)
+        outputs["normal_mask"] = normal_mask.name
+        timings["normal_mask_ms"] = _ms_since(mark)
 
     timings["total_ms"] = _ms_since(started)
     return {

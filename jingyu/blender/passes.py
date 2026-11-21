@@ -105,4 +105,36 @@ def render_id_mask(scene: Any, objects: list[BuiltObject], filepath: Path) -> di
     }
 
 
-__all__ = ["render_id_mask"]
+
+def render_normal_mask(scene: Any, filepath: Path) -> None:
+    """Render camera-space shading normals as RGBA over transparent background.
+
+    RGB maps signed normal components [-1, 1] to [0, 255]. This runs after
+    the exact-ID pass, reusing its single-sample CPU Cycles and Raw settings.
+    """
+
+    material = bpy.data.materials.new("__jingyu_normal_mask__")
+    compat.ensure_node_tree(material)
+    tree = material.node_tree
+    tree.nodes.clear()
+    geometry = tree.nodes.new("ShaderNodeNewGeometry")
+    camera = tree.nodes.new("ShaderNodeVectorTransform")
+    camera.vector_type = "NORMAL"
+    camera.convert_from = "WORLD"
+    camera.convert_to = "CAMERA"
+    encode = tree.nodes.new("ShaderNodeVectorMath")
+    encode.operation = "MULTIPLY_ADD"
+    encode.inputs[1].default_value = (0.5, 0.5, 0.5)
+    encode.inputs[2].default_value = (0.5, 0.5, 0.5)
+    emission = tree.nodes.new("ShaderNodeEmission")
+    output = tree.nodes.new("ShaderNodeOutputMaterial")
+    emission.inputs["Strength"].default_value = 1.0
+    tree.links.new(geometry.outputs["Normal"], camera.inputs["Vector"])
+    tree.links.new(camera.outputs["Vector"], encode.inputs[0])
+    tree.links.new(encode.outputs["Vector"], emission.inputs["Color"])
+    tree.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+    scene.view_layers[0].material_override = material
+    kit.render_still(scene, filepath)
+
+
+__all__ = ["render_id_mask", "render_normal_mask"]
