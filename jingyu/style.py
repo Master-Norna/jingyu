@@ -852,31 +852,79 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     return _on(background, paper_texture(image.size, seed + 131, paper * 0.18))
 
 
-def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Lay short waxy coloured marks with unpainted paper between strokes."""
+def _crayon_wax_masks(
+    image: Image.Image, scale: float, seed: int
+) -> tuple[Image.Image, Image.Image]:
+    """Build independent broken wax layers, with pressure and exposed paper tooth."""
 
-    ground = Image.new("RGB", image.size, (250, 247, 234))
-    strokes = ImageDraw.Draw(ground)
-    pitch = max(5, round(12 * scale))
-    span = max(3, round(10 * scale))
-    thickness = max(2, round(2.8 * scale))
-    for y in range(0, image.height, pitch):
-        for x in range(0, image.width, pitch):
-            for layer in range(2):
+    masks = (Image.new("L", image.size, 0), Image.new("L", image.size, 0))
+    value = ImageOps.grayscale(image)
+    pitch = max(5, round(11 * scale))
+    span = max(4, round(13 * scale))
+    thickness = max(2, round(3 * scale))
+    width, height = image.size
+
+    for layer, mask in enumerate(masks):
+        draw = ImageDraw.Draw(mask)
+        for y in range(0, height, pitch):
+            for x in range(0, width, pitch):
                 key = (
-                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 149 + layer) * 83492791
+                    (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 149 + layer * 31) * 83492791
                 ) & 0xFFFFFFFF
-                px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
-                py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
-                sampled = cast(tuple[int, int, int], image.getpixel((px, py)))
-                wax = tuple(max(0, min(255, round(v * 0.9 + 14))) for v in sampled)
-                direction = -1 if layer else 1
-                strokes.line(
-                    (px, py, px + direction * span, py - max(1, span // 3)),
-                    fill=wax,
-                    width=thickness,
-                )
-    return _on(ground, paper_texture(image.size, seed + 151, paper * 0.8))
+                px = min(width - 1, x + (key >> 8) % min(pitch, width - x))
+                py = min(height - 1, y + (key >> 16) % min(pitch, height - y))
+                vx, vy = local_tangent(value, px, py, max(1, round(3 * scale)))
+                # The upper wax pass crosses some of the first strokes rather
+                # than following an identical mechanical diagonal.
+                if layer:
+                    vx, vy = vx * 0.70 - vy * 0.72, vx * 0.72 + vy * 0.70
+                if key & 1:
+                    vx, vy = -vx, -vy
+                length = span * (0.60 + ((key >> 25) & 3) * 0.12)
+                x0 = px - vx * length / 2
+                y0 = py - vy * length / 2
+                pressure = 165 + ((key >> 19) & 63)
+                for section in range(3):
+                    # Actual missing segments give wax its characteristic
+                    # disconnected deposits; don't just sprinkle noise on top.
+                    if (key >> (section * 3)) & 7 == 0:
+                        continue
+                    t0 = section / 3
+                    t1 = (section + 0.84) / 3
+                    draw.line(
+                        (
+                            x0 + vx * length * t0,
+                            y0 + vy * length * t0,
+                            x0 + vx * length * t1,
+                            y0 + vy * length * t1,
+                        ),
+                        fill=pressure,
+                        width=thickness if section != 1 else max(1, thickness - 1),
+                    )
+
+    # Wax catches the peaks of the sheet. This internal tooth is deliberately
+    # independent of the user-controlled finishing paper texture.
+    tooth = paper_texture(image.size, seed + 211, 2.1)
+    adhesion = tooth.point(lambda pixel: min(255, max(0, (pixel - 191) * 5)))
+    # Almost-white areas receive little or no wax: preserve blank backgrounds.
+    paintable = value.point(lambda pixel: min(255, max(0, (251 - pixel) * 12)))
+    under = ImageChops.multiply(ImageChops.multiply(masks[0], adhesion), paintable)
+    over = ImageChops.multiply(ImageChops.multiply(masks[1], adhesion), paintable)
+    return under, over
+
+
+def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Two overlapping wax colours with crisp broken ridges and exposed paper."""
+
+    sheet = Image.new("RGB", image.size, (250, 247, 234))
+    under, over = _crayon_wax_masks(image, scale, seed)
+    # Each mark takes the colour at its destination pixel, so crossing a
+    # boundary never paints one object's pigment onto another object.
+    first_wax = ImageEnhance.Color(image).enhance(1.12).point(lambda pixel: max(0, pixel - 10))
+    second_wax = Image.blend(ImageEnhance.Color(image).enhance(1.08), sheet, 0.13)
+    drawing = Image.composite(first_wax, sheet, under)
+    drawing = Image.composite(second_wax, drawing, over)
+    return _on(drawing, paper_texture(image.size, seed + 151, paper * 0.65))
 
 
 def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:

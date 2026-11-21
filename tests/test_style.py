@@ -12,6 +12,7 @@ from PIL import Image, ImageChops, ImageDraw
 from jingyu.style import (
     PRESETS,
     _colour_edges,
+    _crayon_wax_masks,
     _pastel_strokes,
     _stippling_centers,
     apply_style,
@@ -835,3 +836,57 @@ def test_pastel_preserves_alpha_on_narrow_canvases(size: tuple[int, int]) -> Non
     assert image.size == source.size
     assert image.getchannel("A").tobytes() == source.getchannel("A").tobytes()
     assert image.tobytes() == apply_style(source, None, spec).tobytes()
+
+
+def test_crayon_layers_have_distinct_overlap_and_exposed_sheet() -> None:
+    source = Image.new("RGB", (180, 120), (39, 81, 174))
+    under, over = _crayon_wax_masks(source, 1.0, 14)
+    assert under.tobytes() != over.tobytes()
+    assert under.tobytes() == _crayon_wax_masks(source, 1.0, 14)[0].tobytes()
+    pixels = list(zip(under.getdata(), over.getdata(), strict=True))
+    assert any(a > 0 and b > 0 for a, b in pixels)
+    assert any(a == 0 and b == 0 for a, b in pixels)
+    assert any(a > 0 and b == 0 for a, b in pixels)
+    assert any(a == 0 and b > 0 for a, b in pixels)
+
+
+def test_crayon_internal_wax_tooth_is_seeded_even_when_paper_off() -> None:
+    source = Image.new("RGB", (160, 96), (39, 87, 188))
+    spec = {"preset": "crayon", "paper": 0, "seed": 17}
+    first = apply_style(source, None, spec)
+    assert first.tobytes() == apply_style(source, None, spec).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**spec, "seed": 18}).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**spec, "paper": 1}).tobytes()
+    assert len(set(first.getdata())) > 30
+    assert any(r > 240 and g > 235 for r, g, _ in first.getdata())
+    assert any(b > g > r for r, g, b in first.getdata())
+    assert (
+        first.tobytes()
+        != apply_style(source, None, {"preset": "pastel", "paper": 0, "seed": 17}).tobytes()
+    )
+
+
+def test_crayon_avoids_cross_colour_bleed_and_leaves_white_background() -> None:
+    source = Image.new("RGB", (180, 96), (255, 255, 255))
+    painter = ImageDraw.Draw(source)
+    painter.rectangle((60, 0, 119, 95), fill=(28, 78, 193))
+    painter.rectangle((120, 0, 179, 95), fill=(207, 61, 35))
+    painted = apply_style(source, None, {"preset": "crayon", "paper": 0, "seed": 23})
+    assert all(painted.getpixel((x, y)) == (250, 247, 234) for y in range(96) for x in range(60))
+    left = [painted.getpixel((x, y)) for y in range(96) for x in range(60, 120)]
+    right = [painted.getpixel((x, y)) for y in range(96) for x in range(120, 180)]
+    blue = [pixel for pixel in left if pixel[2] > pixel[0] + 35]
+    red = [pixel for pixel in right if pixel[0] > pixel[2] + 35]
+    assert blue and red
+    assert all(pixel[2] > pixel[0] for pixel in left if pixel[0] < 180)
+    assert all(pixel[0] > pixel[2] for pixel in right if pixel[2] < 180)
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 31), (2, 2), (7, 5), (31, 9)])
+def test_crayon_keeps_alpha_and_is_deterministic_on_small_images(size: tuple[int, int]) -> None:
+    source = Image.new("RGBA", size, (33, 92, 176, 133))
+    options = {"preset": "crayon", "seed": 6, "paper": 0}
+    painted = apply_style(source, None, options)
+    assert painted.size == size
+    assert painted.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+    assert painted.tobytes() == apply_style(source, None, options).tobytes()
