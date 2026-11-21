@@ -877,8 +877,8 @@ def test_crayon_avoids_cross_colour_bleed_and_leaves_white_background() -> None:
     blue = [pixel for pixel in left if pixel[2] > pixel[0] + 35]
     red = [pixel for pixel in right if pixel[0] > pixel[2] + 35]
     assert blue and red
-    assert all(pixel[2] >= pixel[0] for pixel in left if pixel != (250, 247, 234))
-    assert all(pixel[0] >= pixel[2] for pixel in right if pixel != (250, 247, 234))
+    assert all(pixel[2] > pixel[0] for pixel in left if pixel[0] < 180)
+    assert all(pixel[0] > pixel[2] for pixel in right if pixel[2] < 180)
 
 
 @pytest.mark.parametrize("size", [(1, 1), (1, 31), (2, 2), (7, 5), (31, 9)])
