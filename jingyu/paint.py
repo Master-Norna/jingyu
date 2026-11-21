@@ -12,7 +12,7 @@ import shutil
 import time
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps
 
@@ -275,11 +275,11 @@ def _tone_tangent(
 
     px = max(0, min(gray.width - 1, round(x)))
     py = max(0, min(gray.height - 1, round(y)))
-    gx = int(gray.getpixel((min(gray.width - 1, px + 2), py))) - int(
-        gray.getpixel((max(0, px - 2), py))
+    gx = cast(int, gray.getpixel((min(gray.width - 1, px + 2), py))) - cast(
+        int, gray.getpixel((max(0, px - 2), py))
     )
-    gy = int(gray.getpixel((px, min(gray.height - 1, py + 2)))) - int(
-        gray.getpixel((px, max(0, py - 2)))
+    gy = cast(int, gray.getpixel((px, min(gray.height - 1, py + 2)))) - cast(
+        int, gray.getpixel((px, max(0, py - 2)))
     )
     magnitude = math.hypot(gx, gy)
     if magnitude < 3:
@@ -347,7 +347,7 @@ def _tone_hatch_lines(
     top = y0 + min(pitch // 2, (y1 - y0 - 1) // 2)
     for y in range(top, y1, pitch):
         for x in range(left, x1, pitch):
-            if target.getpixel((x, y)) == 0 or int(gray.getpixel((x, y))) >= 250:
+            if target.getpixel((x, y)) == 0 or cast(int, gray.getpixel((x, y))) >= 250:
                 continue
             initial = _tone_tangent(gray, x, y, fallback)
             backward = _trace_tone(gray, target, (x, y), (-initial[0], -initial[1]), spacing)
