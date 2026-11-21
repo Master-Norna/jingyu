@@ -630,8 +630,6 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
             y1 = min(image.height - 1, y + pitch - grout - 1)
             if x1 <= x0 or y1 <= y0:
                 continue
-            cx = min(image.width - 1, x + pitch // 2)
-            cy = min(image.height - 1, y + pitch // 2)
             # Average each tile footprint: a single centre pixel aliases small objects.
             colour = cast(
                 tuple[int, int, int],
