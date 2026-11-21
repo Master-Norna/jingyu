@@ -33,6 +33,11 @@ FAKE_RENDER = textwrap.dedent(
     width, height = request["overrides"].get("resolution", scene["render"]["resolution"])
     Image.new("RGB", (width, height), (90, 120, 150)).save(out / "image.png")
     outputs = {"image": "image.png"}
+    if request["passes"].get("normal"):
+        Image.new("RGBA", (width, height), (127, 127, 255, 255)).save(
+            out / "normal_mask.png"
+        )
+        outputs["normal_mask"] = "normal_mask.png"
     id_map = None
     if request["passes"]["id_mask"] and "NO_MASK" not in scene.get("notes", ""):
         Image.new("RGBA", (width, height), (0, 0, 1, 255)).save(out / "id_mask.png")
@@ -119,6 +124,7 @@ def test_render_commits_a_candidate(workspace: Workspace) -> None:
         "image.png",
         "id_mask.png",
         "id_map.json",
+        "normal_mask.png",
         "scene.json",
         "blender.log",
     }
@@ -230,6 +236,6 @@ def test_the_worker_receives_a_normalised_request(workspace: Workspace, tmp_path
     request = json.loads(capture.read_text(encoding="utf-8"))
     assert request["protocol"] == "jingyu.worker.v1"
     assert request["action"] == "render"
-    assert request["passes"] == {"id_mask": True, "light": True}
+    assert request["passes"] == {"id_mask": True, "light": True, "normal": True}
     assert request["overrides"] == {"resolution": [480, 360], "samples": 16}
     assert request["scene"]["objects"][1]["geometry"]["segments"] == 96

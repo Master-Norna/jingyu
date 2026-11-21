@@ -20,6 +20,7 @@ from jingyu.candidate import (
     IMAGE_NAME,
     LIGHT_MAP_NAME,
     LIGHT_MASK_NAME,
+    NORMAL_MASK_NAME,
     SCENE_NAME,
     CandidateStore,
 )
@@ -100,6 +101,7 @@ def test_render_commits_a_verified_candidate(
         ID_MAP_NAME,
         LIGHT_MASK_NAME,
         LIGHT_MAP_NAME,
+        NORMAL_MASK_NAME,
         SCENE_NAME,
         "blender.log",
     }
@@ -115,11 +117,14 @@ def test_render_commits_a_verified_candidate(
 
 
 def test_image_and_id_mask_have_the_preview_size(rendered: RenderOutcome) -> None:
-    for name in (IMAGE_NAME, ID_MASK_NAME):
+    for name in (IMAGE_NAME, ID_MASK_NAME, NORMAL_MASK_NAME):
         with Image.open(rendered.candidate.file(name)) as image:
             assert image.size == PREVIEW_SIZE, name
     with Image.open(rendered.candidate.file(ID_MASK_NAME)) as mask:
         assert mask.mode == "RGBA"
+    with Image.open(rendered.candidate.file(NORMAL_MASK_NAME)) as normals:
+        assert normals.mode == "RGBA"
+        assert normals.getchannel("A").getbbox() is not None
 
 
 def test_id_mask_decodes_exactly_and_finds_the_vase(rendered: RenderOutcome) -> None:

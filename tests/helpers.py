@@ -191,6 +191,7 @@ class CandidateFactory:
         extra_pixels: Mapping[tuple[int, int], tuple[int, int, int, int]] | None = None,
         id_map: dict[str, Any] | None = None,
         with_light: bool = True,
+        with_normal: bool = False,
     ) -> Candidate:
         """Commit a synthetic candidate through the real :class:`CandidateStore`."""
 
@@ -217,6 +218,10 @@ class CandidateFactory:
                 "objects": SYNTHETIC_ID_MAP_OBJECTS,
             }
             (staging / ID_MAP_NAME).write_bytes(pretty_bytes(document))
+        if with_normal:
+            Image.new("RGBA", (width, height), (128, 128, 255, 255)).save(
+                staging / "normal_mask.png"
+            )
         if with_light:
             synthetic_light_mask(width, height).save(staging / LIGHT_MASK_NAME)
             light_map = synthetic_light_map(width, height)

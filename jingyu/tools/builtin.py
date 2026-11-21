@@ -189,7 +189,8 @@ GUIDE_WORKFLOW = [
     "flow 'tone' for strokes following tonal contours, 'contour' to follow the "
     "selected object's visible silhouette independently of shadows, or the default "
     "'straight' for parallel lines. Contour requires an object/part ID target and "
-    "does not recover 3D surface normals. Review each immutable candidate.",
+    "does not recover 3D surface normals; use 'surface' with a rendered "
+    "normal pass for camera-space shape directions. Review the new candidate.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -886,13 +887,15 @@ _PAINT_ACTION = {
             "description": "Hatch line spacing in pixels.",
         },
         "flow": {
-            "enum": ["straight", "tone", "contour"],
+            "enum": ["straight", "tone", "contour", "surface"],
             "default": "straight",
             "description": (
                 "Hatch direction: straight keeps parallel lines; tone follows "
                 "luminance contours; contour follows the exact-ID object's visible "
                 "silhouette, ignoring image shading (not 3D surface normals). "
-                "Contour requires an object or assembly-part target."
+                "Contour follows the silhouette only; surface uses camera-space "
+                "3D shading normals for projected isodepth strokes. Both require "
+                "an object/assembly-part target; surface needs a normal pass."
             ),
         },
         "width": {
@@ -910,7 +913,7 @@ _PAINT_ACTION = {
         },
         {
             "if": {
-                "properties": {"op": {"const": "hatch"}, "flow": {"const": "contour"}},
+                "properties": {"op": {"const": "hatch"}, "flow": {"enum": ["contour", "surface"]}},
                 "required": ["op", "flow"],
             },
             "then": {
