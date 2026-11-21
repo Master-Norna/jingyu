@@ -3737,10 +3737,13 @@
                 "gouache",
                 "pastel",
                 "etching",
-                "mosaic"
+                "mosaic",
+                "crayon",
+                "screenprint",
+                "papercut"
               ],
               "default": "none",
-              "description": "none: The render as it is.; ink: Pen lines along every edge over quiet, flattened colour on paper.; watercolor: Soft washes that darken at their edges, pigment settling in the paper grain.; oil: Dabs of paint that keep the big shapes and melt small detail, on canvas.; cel: Flat bands of light and shadow with bold outlines, like animation.; charcoal: Soft monochrome shading, smudged edges and dry pigment on warm paper.; woodcut: Dark relief blocks and carved hatching on warm printing paper.; pencil: Graphite values with layered diagonal and cross hatching on drawing paper.; stippling: Tonal drawing made of discrete ink dots whose density follows shadow.; gouache: Opaque matte colour planes with softened paint edges and fine pigment grain.; pastel: Layered coloured chalk marks with soft smudging and broken paper coverage.; etching: Fine engraved ink lines and graduated crosshatching on printmaking paper.; mosaic: Discrete coloured tesserae separated by visible mortar lines."
+              "description": "none: The render as it is.; ink: Pen lines along every edge over quiet, flattened colour on paper.; watercolor: Soft washes that darken at their edges, pigment settling in the paper grain.; oil: Dabs of paint that keep the big shapes and melt small detail, on canvas.; cel: Flat bands of light and shadow with bold outlines, like animation.; charcoal: Soft monochrome shading, smudged edges and dry pigment on warm paper.; woodcut: Dark relief blocks and carved hatching on warm printing paper.; pencil: Graphite values with layered diagonal and cross hatching on drawing paper.; stippling: Tonal drawing made of discrete ink dots whose density follows shadow.; gouache: Opaque matte colour planes with softened paint edges and fine pigment grain.; pastel: Layered coloured chalk marks with soft smudging and broken paper coverage.; etching: Fine engraved ink lines and graduated crosshatching on printmaking paper.; mosaic: Discrete coloured tesserae separated by visible mortar lines.; crayon: Broken, saturated wax-pencil strokes over exposed toothy paper.; screenprint: Flat limited-colour ink plates with coarse halftone and registration fringe.; papercut: Layered cut-colour silhouettes with hard paper edges and cast shadows."
             },
             "strength": {
               "type": "number",
