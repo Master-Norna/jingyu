@@ -860,9 +860,10 @@ def test_crayon_internal_wax_tooth_is_seeded_even_when_paper_off() -> None:
     assert len(set(first.getdata())) > 30
     assert any(r > 240 and g > 235 for r, g, _ in first.getdata())
     assert any(b > g > r for r, g, b in first.getdata())
-    assert first.tobytes() != apply_style(
-        source, None, {"preset": "pastel", "paper": 0, "seed": 17}
-    ).tobytes()
+    assert (
+        first.tobytes()
+        != apply_style(source, None, {"preset": "pastel", "paper": 0, "seed": 17}).tobytes()
+    )
 
 
 def test_crayon_avoids_cross_colour_bleed_and_leaves_white_background() -> None:
