@@ -155,10 +155,12 @@ def _colour_edges(image: Image.Image, width: float, threshold: int) -> Image.Ima
     """Detect pigment boundaries even when neighbouring hues share luminance."""
 
     softened = image.filter(ImageFilter.GaussianBlur(max(0.35, 0.5 * width)))
-    channels = softened.split()
     edges = Image.new("L", image.size, 0)
-    for channel in channels:
-        edges = ImageChops.lighter(edges, channel.filter(ImageFilter.FIND_EDGES))
+    for channel in softened.split():
+        # Edge extension avoids false full-frame borders from FIND_EDGES.
+        horizontal = ImageChops.difference(channel, _shift_clamped(channel, 1, 0))
+        vertical = ImageChops.difference(channel, _shift_clamped(channel, 0, 1))
+        edges = ImageChops.lighter(edges, ImageChops.lighter(horizontal, vertical))
     return _thicken(edges.point(lambda value: 255 if value > threshold else 0), width)
 
 
@@ -362,11 +364,22 @@ def _oil(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Ima
             x0, y0 = px - dx * radius, py - dy * radius
             x1, y1 = px + dx * radius, py + dy * radius
             color = cast(tuple[int, int, int], source.getpixel((px, py)))
-            edge_colors = (
-                cast(tuple[int, int, int], image.getpixel((min(image.width - 1, max(0, round(x0))), min(image.height - 1, max(0, round(y0))))),
-                cast(tuple[int, int, int], image.getpixel((min(image.width - 1, max(0, round(x1))), min(image.height - 1, max(0, round(y1))))),
+            p0 = (
+                min(image.width - 1, max(0, round(x0))),
+                min(image.height - 1, max(0, round(y0))),
             )
-            if any(max(abs(a - b) for a, b in zip(edge, color)) > 65 for edge in edge_colors):
+            p1 = (
+                min(image.width - 1, max(0, round(x1))),
+                min(image.height - 1, max(0, round(y1))),
+            )
+            edge_colors = (
+                cast(tuple[int, int, int], image.getpixel(p0)),
+                cast(tuple[int, int, int], image.getpixel(p1)),
+            )
+            if any(
+                max(abs(edge[i] - color[i]) for i in range(3)) > 65
+                for edge in edge_colors
+            ):
                 continue  # Do not drag a coloured stroke across an object edge.
             body = tuple(max(0, channel - 10) for channel in color)
             ridge = tuple(min(255, channel + 18) for channel in color)

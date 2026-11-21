@@ -9,7 +9,15 @@ import pytest
 from helpers import CRATE_BOX, VASE_BOX, synthetic_mask
 from PIL import Image, ImageChops, ImageDraw
 
-from jingyu.style import PRESETS, _colour_edges, apply_style, flatten, kuwahara, outlines, paper_texture
+from jingyu.style import (
+    PRESETS,
+    _colour_edges,
+    apply_style,
+    flatten,
+    kuwahara,
+    outlines,
+    paper_texture,
+)
 
 
 def _render() -> Image.Image:
@@ -524,6 +532,7 @@ def test_watercolour_can_detect_equal_luminance_different_hues() -> None:
     edge = _colour_edges(source, 1, 20)
     assert edge.getpixel((60, 40)) > 50
     assert edge.getpixel((22, 40)) == 0
+    assert _colour_edges(Image.new("RGB", (90, 60), (70, 100, 140)), 1, 20).getbbox() is None
     styled = apply_style(source, None, {"preset": "watercolor", "paper": 0})
     near = sum(styled.getpixel((59, 40)))
     far = sum(styled.getpixel((38, 40)))
