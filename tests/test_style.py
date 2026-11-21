@@ -18,6 +18,7 @@ from jingyu.style import (
     outlines,
     paper_texture,
 )
+from jingyu.style_strokes import directional_hatch, local_tangent, tapered_brush
 
 
 def _render() -> Image.Image:
@@ -574,3 +575,61 @@ def test_all_media_preserve_rgba_source_and_are_repeatable(preset: str) -> None:
     assert a.tobytes() == b.tobytes()
     assert a.getchannel("A").tobytes() == alpha.tobytes()
     assert source.tobytes() == before
+
+
+def test_stroke_direction_follows_local_luminance_contours() -> None:
+    horizontal = Image.new("L", (80, 80))
+    horizontal.putdata([x * 3 for y in range(80) for x in range(80)])
+    vertical = Image.new("L", (80, 80))
+    vertical.putdata([y * 3 for y in range(80) for x in range(80)])
+    vx, vy = local_tangent(horizontal, 40, 40, 3)
+    assert abs(vx) < 0.05 and abs(vy) > 0.95
+    vx, vy = local_tangent(vertical, 40, 40, 3)
+    assert abs(vy) < 0.05 and abs(vx) > 0.95
+    vx, vy = local_tangent(horizontal, 40, 40, 3, crossed=True)
+    assert abs(vx) > 0.95 and abs(vy) < 0.05
+
+
+def test_hatch_pressure_varies_but_never_uses_cross_border_wrap() -> None:
+    field = Image.new("L", (128, 72), 128)
+    first = directional_hatch(field, 8, 1, seed=4)
+    second = directional_hatch(field, 8, 1, seed=4)
+    another = directional_hatch(field, 8, 1, seed=5)
+    assert first.tobytes() == second.tobytes()
+    assert first.tobytes() != another.tobytes()
+    values = set(first.getdata())
+    assert len(values) > 7  # not a single rigid line pressure
+    assert 0 in values
+
+
+def test_tapered_brush_has_distinct_end_pressure() -> None:
+    mask = Image.new("L", (80, 64), 0)
+    flat = Image.new("L", mask.size, 100)
+    tapered_brush(mask, flat, 25, 25, length=20, width=6, ink=220, seed_key=0)
+    values = set(mask.getdata())
+    assert 220 in values and 188 in values and 0 in values
+
+
+@pytest.mark.parametrize("preset", ["pencil", "etching", "woodcut", "sumi"])
+def test_adaptive_linear_media_are_seeded_and_keep_alpha(preset: str) -> None:
+    scene = Image.new("RGBA", (120, 96), (230, 215, 200, 255))
+    painter = ImageDraw.Draw(scene)
+    painter.rectangle((60, 0, 119, 95), fill=(24, 31, 48, 200))
+    options = {"preset": preset, "paper": 0, "line_width": 0, "seed": 11}
+    first = apply_style(scene, None, options)
+    repeated = apply_style(scene, None, options)
+    different = apply_style(scene, None, {**options, "seed": 12})
+    assert first.tobytes() == repeated.tobytes()
+    assert first.tobytes() != different.tobytes()
+    assert first.getchannel("A").tobytes() == scene.getchannel("A").tobytes()
+    assert sum(first.getpixel((90, 40))[:3]) < sum(first.getpixel((30, 40))[:3])
+
+
+def test_woodcut_has_actual_exposed_gouges_inside_the_solid_shadow() -> None:
+    source = Image.new("RGB", (160, 112), (245, 245, 245))
+    ImageDraw.Draw(source).rectangle((30, 18, 129, 95), fill=(14, 14, 14))
+    image = apply_style(source, None, {"preset": "woodcut", "paper": 0, "line_width": 0})
+    values = [image.getpixel((x, y))[0] for y in range(30, 85) for x in range(45, 115)]
+    assert min(values) < 55
+    assert max(values) > 90
+    assert sum(value > 110 for value in values) > 20

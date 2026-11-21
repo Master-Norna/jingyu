@@ -27,6 +27,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageMa
 
 from .geometry.noise import value_noise
 from .style_media import embroidery, frottage, glaze
+from .style_strokes import directional_hatch, tapered_brush
 
 PRESETS: dict[str, str] = {
     "none": "The render as it is.",
@@ -423,43 +424,28 @@ def _woodcut(
     paper: float,
     seed: int,
 ) -> Image.Image:
-    """Relief-black shadows with directional cuts through the midtones."""
+    """Carve white gouges through solid relief ink; shade midtones with short cuts."""
 
     shade = ImageOps.invert(
         ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.5, 0.8 * scale)))
     )
-    solid = shade.point(lambda value: 255 if value >= 170 else 0)
-    hatch = Image.new("L", image.size, 0)
     pitch = max(4, round(11 * scale))
     stroke = max(1, round(1.3 * scale))
-    width, height = image.size
-    draw = ImageDraw.Draw(hatch)
-    for start in range(-height, width + height, pitch):
-        draw.line((start, 0, start + height, height), fill=255, width=stroke)
+    solid = shade.point(lambda value: 255 if value >= 170 else 0)
+    hatch = directional_hatch(shade, pitch, stroke, seed + 41)
     middle = shade.point(lambda value: min(255, max(0, (value - 45) * 3)))
-    ink = ImageChops.lighter(solid, ImageChops.multiply(hatch, middle))
+    # A relief print needs exposed wood cuts inside its black block, not only
+    # another stack of black hatch lines.
+    gouges = directional_hatch(shade, pitch * 3, stroke, seed + 43, crossed=True)
+    deepest = shade.point(lambda value: 255 if value >= 210 else 0)
+    carved = ImageChops.subtract(solid, ImageChops.multiply(gouges, deepest))
+    ink = ImageChops.lighter(carved, ImageChops.multiply(hatch, middle))
     if line > 0:
         ink = ImageChops.lighter(ink, outlines(id_mask, image.size, line * 1.6))
     paper_color = Image.new("RGB", image.size, (248, 242, 225))
     dark = Image.new("RGB", image.size, (36, 31, 26))
     pressed = Image.composite(dark, paper_color, ink)
     return _on(pressed, paper_texture(image.size, seed + 41, paper * 0.55))
-
-
-def _diagonal_hatch(
-    size: tuple[int, int], pitch: int, thickness: int, descending: bool
-) -> Image.Image:
-    """Small, consistent graphite hatches, with no wrapping at image borders."""
-
-    width, height = size
-    lines = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(lines)
-    for offset in range(-height, width + height, pitch):
-        if descending:
-            draw.line((offset, 0, offset + height, height), fill=255, width=thickness)
-        else:
-            draw.line((offset, 0, offset - height, height), fill=255, width=thickness)
-    return lines
 
 
 def _pencil(
@@ -470,7 +456,7 @@ def _pencil(
     paper: float,
     seed: int,
 ) -> Image.Image:
-    """Build graphite shading from a light grey underdrawing and crossed hatches."""
+    """Layer graphite with locally guided pressure-varying hatch strokes."""
 
     value = ImageOps.grayscale(image)
     shadow = ImageOps.invert(value.filter(ImageFilter.GaussianBlur(max(0.4, scale))))
@@ -478,11 +464,11 @@ def _pencil(
     thickness = max(1, round(1.1 * scale))
     underdrawing = shadow.point(lambda v: v // 3)
     primary = ImageChops.multiply(
-        _diagonal_hatch(image.size, pitch, thickness, True),
+        directional_hatch(value, pitch, thickness, seed + 61),
         shadow.point(lambda v: min(255, max(0, (v - 15) * 2))),
     )
     crossed = ImageChops.multiply(
-        _diagonal_hatch(image.size, pitch, thickness, False),
+        directional_hatch(value, pitch + max(1, pitch // 3), thickness, seed + 67, crossed=True),
         shadow.point(lambda v: min(255, max(0, (v - 120) * 3))),
     )
     graphite = ImageChops.lighter(underdrawing, ImageChops.lighter(primary, crossed))
@@ -576,34 +562,30 @@ def _etching(
     paper: float,
     seed: int,
 ) -> Image.Image:
-    """Shade with engraved strokes, crosshatching, and incisive contour lines."""
+    """Use contour-guided engraved strokes, layered crosshatching and open paper."""
 
-    shade = ImageOps.invert(
-        ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.45, scale)))
-    )
+    value = ImageOps.grayscale(image)
+    shade = ImageOps.invert(value.filter(ImageFilter.GaussianBlur(max(0.45, scale))))
     pitch = max(4, round(11 * scale))
     fine = max(1, round(1.2 * scale))
     primary = ImageChops.multiply(
-        _diagonal_hatch(image.size, pitch, fine, True),
+        directional_hatch(value, pitch, fine, seed + 113),
         shade.point(lambda v: min(255, max(0, (v - 20) * 3))),
     )
     secondary = ImageChops.multiply(
-        _diagonal_hatch(image.size, pitch + max(1, pitch // 3), fine, False),
+        directional_hatch(value, pitch + max(1, pitch // 3), fine, seed + 117, crossed=True),
         shade.point(lambda v: min(255, max(0, (v - 95) * 3))),
     )
-    deep_lines = Image.new("L", image.size, 0)
-    engraver = ImageDraw.Draw(deep_lines)
-    for y in range(0, image.height, max(3, pitch // 2)):
-        engraver.line((0, y, image.width - 1, y), fill=255, width=fine)
+    # Short rather than page-spanning deep incisions keep a visible paper grain.
     deepest = ImageChops.multiply(
-        deep_lines, shade.point(lambda v: min(255, max(0, (v - 175) * 4)))
+        directional_hatch(value, max(3, pitch // 2), fine, seed + 121),
+        shade.point(lambda v: min(255, max(0, (v - 175) * 4))),
     )
     etched = ImageChops.lighter(primary, ImageChops.lighter(secondary, deepest))
     etched = ImageChops.lighter(etched, shade.point(lambda v: v // 10))
     if line > 0:
         contours = ImageChops.lighter(
-            outlines(id_mask, image.size, line),
-            value_edges(image, line, 58),
+            outlines(id_mask, image.size, line), value_edges(image, line, 58)
         )
         etched = ImageChops.lighter(etched, contours)
     page = Image.new("RGB", image.size, (250, 246, 234))
@@ -746,14 +728,14 @@ def _sumi(
     paper: float,
     seed: int,
 ) -> Image.Image:
-    """Layer ink washes with occasional directional dark-brush touches."""
+    """Layer grey washes and locally directed brush marks with tapered ends."""
 
-    shade = ImageOps.invert(ImageOps.grayscale(image))
+    value = ImageOps.grayscale(image)
+    shade = ImageOps.invert(value)
     broad = shade.filter(ImageFilter.GaussianBlur(max(0.8, 2.2 * scale)))
     stepped = broad.point(lambda v: min(255, (v // 34) * 34 + v // 7))
     washes = Image.blend(broad, stepped, 0.40)
     marks = Image.new("L", image.size, 0)
-    brush = ImageDraw.Draw(marks)
     pitch = max(6, round(16 * scale))
     length = max(3, round(13 * scale))
     for y in range(0, image.height, pitch):
@@ -764,17 +746,22 @@ def _sumi(
             weight = cast(int, shade.getpixel((px, py)))
             if weight < 95 or (key & 7) > weight // 34:
                 continue
-            brush.line(
-                (px, py, min(image.width - 1, px + length), max(0, py - length // 3)),
-                fill=min(255, 188 + weight // 5 + ((key >> 19) & 31)),
-                width=max(1, round(2.0 * scale)),
+            tapered_brush(
+                marks,
+                value,
+                px,
+                py,
+                length,
+                max(2, round(2.2 * scale)),
+                min(255, 188 + weight // 5 + ((key >> 19) & 31)),
+                key,
             )
     ink = ImageChops.lighter(washes, marks)
     if line > 0:
         edges = ImageChops.lighter(
             outlines(id_mask, image.size, line), value_edges(image, line, 48)
         )
-        ink = ImageChops.lighter(ink, edges.point(lambda value: value * 3 // 4))
+        ink = ImageChops.lighter(ink, edges.point(lambda v: v * 3 // 4))
     page = Image.new("RGB", image.size, (249, 247, 239))
     pigment = Image.new("RGB", image.size, (25, 27, 29))
     return _on(
