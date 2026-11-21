@@ -136,6 +136,8 @@ def apply_paint(
     for operation in operations:
         mask = _target_mask(result.size, operation["target"], id_mask, id_map)
         kind = operation["op"]
+        if kind != "hatch" and "flow" in operation:
+            raise JingyuError("tool.invalid_arguments", "flow is only supported for hatch")
         if kind == "wash":
             result = _wash(result, mask, operation)
         elif kind == "hatch":
@@ -232,11 +234,28 @@ def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
         return image
     spacing = float(operation.get("spacing", 8))
     angle = math.radians(float(operation.get("angle", 45)))
+    flow = operation.get("flow", "straight")
+    if flow == "straight":
+        lines = _straight_hatch_lines(image.size, spacing, width, angle)
+    elif flow == "tone":
+        lines = _tone_hatch_lines(image, target, spacing, width, angle)
+    else:
+        raise JingyuError("tool.invalid_arguments", f"unknown hatch flow {flow!r}")
+    darkness = ImageOps.invert(ImageOps.grayscale(image))
+    stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
+    return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
+
+
+def _straight_hatch_lines(
+    size: tuple[int, int], spacing: float, width: float, angle: float
+) -> Image.Image:
+    """Parallel strokes: preserve the original hatch layout exactly."""
+
     dx, dy = math.cos(angle), math.sin(angle)
     nx, ny = -dy, dx
-    center_x, center_y = image.width / 2, image.height / 2
-    radius = math.hypot(*image.size)
-    lines = Image.new("L", image.size, 0)
+    center_x, center_y = size[0] / 2, size[1] / 2
+    radius = math.hypot(*size)
+    lines = Image.new("L", size, 0)
     draw = ImageDraw.Draw(lines)
     for step in range(-math.ceil(radius / spacing), math.ceil(radius / spacing) + 1):
         x = center_x + nx * step * spacing
@@ -246,9 +265,97 @@ def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
             fill=255,
             width=max(1, round(width)),
         )
-    darkness = ImageOps.invert(ImageOps.grayscale(image))
-    stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
-    return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
+    return lines
+
+
+def _tone_tangent(
+    gray: Image.Image, x: float, y: float, previous: tuple[float, float]
+) -> tuple[float, float]:
+    """A tangent to local luminance contours; keep orientation continuous."""
+
+    px = max(0, min(gray.width - 1, round(x)))
+    py = max(0, min(gray.height - 1, round(y)))
+    gx = int(gray.getpixel((min(gray.width - 1, px + 2), py))) - int(
+        gray.getpixel((max(0, px - 2), py))
+    )
+    gy = int(gray.getpixel((px, min(gray.height - 1, py + 2)))) - int(
+        gray.getpixel((px, max(0, py - 2)))
+    )
+    magnitude = math.hypot(gx, gy)
+    if magnitude < 3:
+        return previous
+    tx, ty = -gy / magnitude, gx / magnitude
+    if tx * previous[0] + ty * previous[1] < 0:
+        return -tx, -ty
+    return tx, ty
+
+
+def _trace_tone(
+    gray: Image.Image,
+    target: Image.Image,
+    origin: tuple[int, int],
+    direction: tuple[float, float],
+    spacing: float,
+) -> list[tuple[float, float]]:
+    """Walk a short curved stroke without leaving the requested target."""
+
+    step = max(1.0, min(3.0, spacing / 3))
+    steps = max(3, round(2 * spacing / step))
+    x, y = float(origin[0]), float(origin[1])
+    points: list[tuple[float, float]] = []
+    for _ in range(steps):
+        wanted = _tone_tangent(gray, x, y, direction)
+        vx = 0.35 * direction[0] + 0.65 * wanted[0]
+        vy = 0.35 * direction[1] + 0.65 * wanted[1]
+        magnitude = math.hypot(vx, vy)
+        dx, dy = vx / magnitude, vy / magnitude
+        next_x, next_y = x + dx * step, y + dy * step
+        if not (0 <= next_x < gray.width and 0 <= next_y < gray.height):
+            break
+        if target.getpixel((int(next_x), int(next_y))) == 0:
+            break
+        x, y = next_x, next_y
+        points.append((x, y))
+        direction = (dx, dy)
+    return points
+
+
+def _tone_hatch_lines(
+    image: Image.Image, target: Image.Image, spacing: float, width: float, angle: float
+) -> Image.Image:
+    """Draw short strokes along tonal contours; no surface-normal pass needed."""
+
+    lines = Image.new("L", image.size, 0)
+    box = target.getbbox()
+    if box is None:
+        return lines
+
+    pitch = max(2, round(spacing))
+    x0, y0, x1, y1 = box
+    estimated = math.ceil((x1 - x0) / pitch) * math.ceil((y1 - y0) / pitch)
+    if estimated > 250_000:
+        raise JingyuError(
+            "tool.invalid_arguments",
+            "tone hatching exceeds the stroke budget",
+            hint="Increase spacing or paint a smaller target.",
+        )
+
+    gray = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(1.5))
+    fallback = (math.cos(angle), math.sin(angle))
+    draw = ImageDraw.Draw(lines)
+    left = x0 + min(pitch // 2, (x1 - x0 - 1) // 2)
+    top = y0 + min(pitch // 2, (y1 - y0 - 1) // 2)
+    for y in range(top, y1, pitch):
+        for x in range(left, x1, pitch):
+            if target.getpixel((x, y)) == 0 or int(gray.getpixel((x, y))) >= 250:
+                continue
+            initial = _tone_tangent(gray, x, y, fallback)
+            backward = _trace_tone(gray, target, (x, y), (-initial[0], -initial[1]), spacing)
+            forward = _trace_tone(gray, target, (x, y), initial, spacing)
+            points = [*reversed(backward), (float(x), float(y)), *forward]
+            if len(points) >= 2:
+                draw.line(points, fill=255, width=max(1, round(width)), joint="curve")
+    return lines
 
 
 def _edge_ink(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
