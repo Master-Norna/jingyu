@@ -121,9 +121,7 @@ def test_new_styles_are_neutral_and_preserve_light_dark_structure(preset: str) -
 @pytest.mark.parametrize("preset", ["charcoal", "woodcut"])
 def test_new_styles_respect_zero_outline_width(preset: str) -> None:
     render = _render()
-    with_mask = apply_style(
-        render, synthetic_mask(), {"preset": preset, "line_width": 0}
-    )
+    with_mask = apply_style(render, synthetic_mask(), {"preset": preset, "line_width": 0})
     without_mask = apply_style(render, None, {"preset": preset, "line_width": 0})
     assert with_mask.tobytes() == without_mask.tobytes()
 
