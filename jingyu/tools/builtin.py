@@ -861,7 +861,12 @@ _PAINT_ACTION = {
             "pattern": "^#[0-9a-fA-F]{6}$",
             "description": "Paint colour in sRGB hex.",
         },
-        "strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 0.65},
+        "strength": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Opacity: wash defaults to 0.35, hatch to 0.65, edge_ink to 0.9.",
+        },
         "angle": {
             "type": "number",
             "minimum": -180,
