@@ -118,7 +118,8 @@ Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执
 （`gouache`），再扩展粉彩（`pastel`）、铜版蚀刻（`etching`）和马赛克
 （`mosaic`），以及蜡笔（`crayon`）、丝网印刷（`screenprint`）、剪纸拼贴
 （`papercut`），再加入传统水墨（`sumi`）、彩色玻璃（`stainedglass`）与蓝晒
-（`cyanotype`）。全部采用确定性算法，无需新依赖。这些是可控图像绘制风格，
+（`cyanotype`），以及拓印（`frottage`）、刺绣（`embroidery`）和陶瓷釉彩
+（`glaze`）。全部采用确定性算法，无需新依赖。这些是可控图像绘制风格，
 并非真实材料的物理仿真。进度见 [CHANGELOG](CHANGELOG.md)，方案见
 [技术方案](docs/技术方案.md)。
 

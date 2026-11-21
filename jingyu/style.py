@@ -26,6 +26,7 @@ from typing import Any, cast
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageMath, ImageOps
 
 from .geometry.noise import value_noise
+from .style_media import embroidery, frottage, glaze
 
 PRESETS: dict[str, str] = {
     "none": "The render as it is.",
@@ -47,6 +48,9 @@ PRESETS: dict[str, str] = {
     "sumi": "Layered monochrome ink washes, flowing brush marks and pale rice paper.",
     "stainedglass": "Backlit colour panes enclosed by dark lead-came boundaries.",
     "cyanotype": "Prussian-blue photographic values and pale contact-print silhouettes.",
+    "frottage": "Graphite rubbing catches surface relief and directional paper ridges.",
+    "embroidery": "Coloured thread stitches render forms on exposed woven fabric.",
+    "glaze": "Glossy ceramic colour with pooled edges and reflected highlight runs.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -103,6 +107,12 @@ def apply_style(
         styled = _stainedglass(rgb, id_mask, line, paper, seed)
     elif preset == "cyanotype":
         styled = _cyanotype(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "frottage":
+        styled = frottage(rgb, scale, paper_texture(rgb.size, seed + 223, paper), seed)
+    elif preset == "embroidery":
+        styled = embroidery(rgb, scale, paper_texture(rgb.size, seed + 227, paper * 0.4), seed)
+    elif preset == "glaze":
+        styled = glaze(rgb, scale, paper_texture(rgb.size, seed + 229, paper * 0.15), seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
