@@ -402,9 +402,7 @@ def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Ima
         for x in range(0, width, pitch):
             darkness = cast(
                 int,
-                shade.getpixel(
-                    (min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))
-                ),
+                shade.getpixel((min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))),
             )
             for mark in range(3):
                 key = (
