@@ -744,3 +744,41 @@ def test_charcoal_handles_tiny_and_narrow_canvases(size: tuple[int, int]) -> Non
     output = apply_style(source, None, {"preset": "charcoal", "seed": 5})
     assert output.size == size
     assert output.mode == "RGB"
+
+
+def test_gouache_brush_relief_exists_without_paper_and_changes_with_seed() -> None:
+    source = Image.new("RGB", (240, 120), (95, 145, 195))
+    spec = {"preset": "gouache", "paper": 0, "seed": 41}
+    first = apply_style(source, None, spec)
+    assert first.tobytes() == apply_style(source, None, spec).tobytes()
+    assert first.tobytes() != apply_style(source, None, {**spec, "seed": 42}).tobytes()
+    assert len(set(first.getdata())) > 6
+    assert all(
+        pixel[2] > pixel[1] > pixel[0]
+        for pixel in (first.getpixel((20, 20)), first.getpixel((120, 60)))
+    )
+    assert source.getpixel((120, 60)) == (95, 145, 195)
+    assert first.tobytes() != apply_style(source, None, {**spec, "paper": 1}).tobytes()
+
+
+def test_gouache_preserves_adjacent_hues_without_an_ink_outline() -> None:
+    source = Image.new("RGB", (180, 100), (38, 95, 205))
+    ImageDraw.Draw(source).rectangle((90, 0, 179, 99), fill=(205, 64, 39))
+    result = apply_style(source, None, {"preset": "gouache", "paper": 0, "seed": 18})
+    for y in (20, 50, 80):
+        left = result.getpixel((89, y))
+        right = result.getpixel((90, y))
+        assert left[2] > left[0] + 80
+        assert right[0] > right[2] + 80
+    assert result.getpixel((45, 50))[2] > 100
+    assert result.getpixel((140, 50))[0] > 100
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 29), (2, 2), (7, 5), (30, 9)])
+def test_gouache_handles_tiny_and_narrow_canvases(size: tuple[int, int]) -> None:
+    source = Image.new("RGBA", size, (120, 155, 185, 125))
+    spec = {"preset": "gouache", "paper": 0, "seed": 7}
+    result = apply_style(source, None, spec)
+    assert result.size == size
+    assert result.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+    assert result.tobytes() == apply_style(source, None, spec).tobytes()
