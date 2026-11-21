@@ -676,8 +676,10 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
                 offset = 0.55 + ((key >> 22) & 3) * 0.12
                 draw_ridge.line(
                     (
-                        x0 - dy * offset, y0 + dx * offset,
-                        x1 - dy * offset, y1 + dx * offset,
+                        x0 - dy * offset,
+                        y0 + dx * offset,
+                        x1 - dy * offset,
+                        y1 + dx * offset,
                     ),
                     fill=100 + ((key >> 17) & 63),
                     width=max(1, thickness // 2),
