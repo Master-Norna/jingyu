@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from jingyu.candidate import IMAGE_NAME, RENDER_NAME, CandidateStore
 from jingyu.errors import JingyuError
-from jingyu.paint import _tone_tangent, apply_paint, paint_candidate
+from jingyu.paint import _surface_tangent, _tone_tangent, apply_paint, paint_candidate
 from jingyu.tools.builtin import REGISTRY
 from jingyu.tools.registry import ToolContext
 
@@ -438,3 +438,75 @@ def test_contour_flow_requires_an_object_mask_and_records_recipe(
     with pytest.raises(JingyuError) as exc:
         paint_candidate(make_candidate.workspace, missing.id, [action])
     assert exc.value.code == "candidate.missing_pass"
+
+
+def test_surface_tangent_uses_camera_normals_not_luminance() -> None:
+    normals = Image.new("RGBA", (48, 48), (255, 128, 128, 255))
+    tangent = _surface_tangent(normals, 24, 24, (1.0, 0.0))
+    assert abs(tangent[0]) < 0.02
+    assert tangent[1] > 0.98
+    normals.putpixel((24, 24), (128, 128, 255, 0))
+    assert _surface_tangent(normals, 24, 24, (1.0, 0.0)) == (1.0, 0.0)
+    normals.putpixel((24, 24), (128, 128, 255, 255))
+    assert _surface_tangent(normals, 24, 24, (1.0, 0.0)) == (1.0, 0.0)
+
+
+def test_surface_paint_is_repeatable_and_local_to_object() -> None:
+    image = Image.new("RGB", (96, 96), (40, 40, 40))
+    ids = Image.new("RGBA", (96, 96), (0, 0, 0, 0))
+    ImageDraw.Draw(ids).ellipse((20, 20, 76, 76), fill=(0, 0, 1, 255))
+    normals = Image.new("RGBA", (96, 96), (255, 128, 128, 255))
+    action = {
+        "op": "hatch", "flow": "surface", "target": {"object": "vase"},
+        "angle": 0, "spacing": 7, "color": "#ffffff", "strength": 1,
+    }
+    mapping = {"objects": {"1": {"object": "vase"}}}
+    first = apply_paint(image, [action], id_mask=ids, id_map=mapping, normal_mask=normals)
+    second = apply_paint(image, [action], id_mask=ids, id_map=mapping, normal_mask=normals)
+    tone = apply_paint(image, [{**action, "flow": "tone"}], id_mask=ids, id_map=mapping)
+    assert first.tobytes() == second.tobytes()
+    assert first.tobytes() != image.tobytes()
+    assert first.tobytes() != tone.tobytes()
+    for point in ((0, 0), (95, 95), (10, 45), (48, 85)):
+        assert first.getpixel(point) == image.getpixel(point)
+
+
+def test_surface_requires_normal_pass_and_keeps_parent(
+    make_candidate: CandidateFactory,
+) -> None:
+    source = make_candidate(with_normal=True)
+    workspace = make_candidate.workspace
+    action = {"op": "hatch", "flow": "surface", "target": {"object": "vase"}}
+    painted = paint_candidate(workspace, source.id, [action])
+    assert painted.receipt["paint"]["operations"][0]["flow"] == "surface"
+    assert painted.file("normal_mask.png").read_bytes() == source.file("normal_mask.png").read_bytes()
+    assert CandidateStore(workspace).verify(painted) == []
+    assert CandidateStore(workspace).verify(source) == []
+
+    without = make_candidate()
+    with pytest.raises(JingyuError) as exc:
+        paint_candidate(workspace, without.id, [action])
+    assert exc.value.code == "candidate.missing_pass"
+
+    region = {"region": {"x0": 0, "y0": 0, "x1": 10, "y1": 10}}
+    with pytest.raises(JingyuError) as exc:
+        REGISTRY.invoke(
+            "paint_candidate",
+            {"candidate_id": source.id, "operations": [{**action, "target": region}]},
+            ToolContext(workspace),
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+
+
+def test_surface_rejects_missing_or_misaligned_normal_image() -> None:
+    image = Image.new("RGB", (48, 48))
+    action = {"op": "hatch", "flow": "surface", "target": {"object": "vase"}}
+    ids = Image.new("RGBA", (48, 48), (0, 0, 1, 255))
+    mapping = {"objects": {"1": {"object": "vase"}}}
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(image, [action], id_mask=ids, id_map=mapping)
+    assert exc.value.code == "candidate.missing_pass"
+    for normals in (Image.new("RGBA", (47, 48)), Image.new("RGB", (48, 48))):
+        with pytest.raises(JingyuError) as exc:
+            apply_paint(image, [action], id_mask=ids, id_map=mapping, normal_mask=normals)
+        assert exc.value.code == "candidate.integrity_mismatch"

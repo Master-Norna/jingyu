@@ -21,6 +21,7 @@ from .candidate import (
     ID_MAP_NAME,
     ID_MASK_NAME,
     IMAGE_NAME,
+    NORMAL_MASK_NAME,
     RECEIPT_NAME,
     RENDER_NAME,
     Candidate,
@@ -80,8 +81,24 @@ def paint_candidate(
         if id_mask.size != image.size or not isinstance(id_map, dict):
             raise JingyuError("candidate.integrity_mismatch", "invalid ID pass for painting")
 
+    normal_mask: Image.Image | None = None
+    if any(op["op"] == "hatch" and op.get("flow") == "surface" for op in operations):
+        if not source.has_normal_mask:
+            raise JingyuError(
+                "candidate.missing_pass",
+                f"{candidate_id} has no camera-space normal mask for surface hatching",
+            )
+        with Image.open(source.file(NORMAL_MASK_NAME)) as opened:
+            if opened.mode != "RGBA" or opened.size != image.size:
+                raise JingyuError(
+                    "candidate.integrity_mismatch", "invalid normal pass for painting"
+                )
+            normal_mask = opened.copy()
+
     start = time.perf_counter()
-    painted = apply_paint(image, operations, id_mask=id_mask, id_map=id_map)
+    painted = apply_paint(
+        image, operations, id_mask=id_mask, id_map=id_map, normal_mask=normal_mask
+    )
 
     staging = workspace.staging_dir / uuid.uuid4().hex
     staging.mkdir(parents=True)
@@ -128,11 +145,16 @@ def apply_paint(
     *,
     id_mask: Image.Image | None = None,
     id_map: Mapping[str, Any] | None = None,
+    normal_mask: Image.Image | None = None,
 ) -> Image.Image:
     """Apply a sequence of local paint actions, preserving source alpha."""
 
     alpha = image.getchannel("A") if "A" in image.getbands() else None
     result = image.convert("RGB")
+    if normal_mask is not None and (
+        normal_mask.mode != "RGBA" or normal_mask.size != result.size
+    ):
+        raise JingyuError("candidate.integrity_mismatch", "invalid normal pass for painting")
     for operation in operations:
         mask = _target_mask(result.size, operation["target"], id_mask, id_map)
         kind = operation["op"]
@@ -141,7 +163,7 @@ def apply_paint(
         if kind == "wash":
             result = _wash(result, mask, operation)
         elif kind == "hatch":
-            result = _hatch(result, mask, operation)
+            result = _hatch(result, mask, operation, normal_mask=normal_mask)
         elif kind == "edge_ink":
             result = _edge_ink(result, mask, operation)
         else:
@@ -227,18 +249,28 @@ def _wash(image: Image.Image, target: Image.Image, operation: Mapping[str, Any])
     )
 
 
-def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]) -> Image.Image:
+def _hatch(
+    image: Image.Image,
+    target: Image.Image,
+    operation: Mapping[str, Any],
+    *,
+    normal_mask: Image.Image | None = None,
+) -> Image.Image:
     width = float(operation.get("width", 1.5))
     strength = float(operation.get("strength", 0.65))
     flow = operation.get("flow", "straight")
-    if flow == "contour" and "region" in operation["target"]:
+    if flow in ("contour", "surface") and "region" in operation["target"]:
         raise JingyuError(
             "tool.invalid_arguments",
-            "contour hatching requires an object or assembly part",
+            f"{flow} hatching requires an object or assembly part",
             hint="Select an object or part with an exact ID pass; use tone for regions.",
         )
-    if flow not in ("straight", "tone", "contour"):
+    if flow not in ("straight", "tone", "contour", "surface"):
         raise JingyuError("tool.invalid_arguments", f"unknown hatch flow {flow!r}")
+    if flow == "surface" and normal_mask is None:
+        raise JingyuError(
+            "candidate.missing_pass", "surface hatching requires a camera-space normal pass"
+        )
     if width <= 0 or strength <= 0:
         return image
     spacing = float(operation.get("spacing", 8))
@@ -247,8 +279,12 @@ def _hatch(image: Image.Image, target: Image.Image, operation: Mapping[str, Any]
         lines = _straight_hatch_lines(image.size, spacing, width, angle)
     elif flow == "tone":
         lines = _tone_hatch_lines(image, target, spacing, width, angle)
-    else:  # contour: use the selected object's silhouette, not the image's shadows.
+    elif flow == "contour":
         lines = _tone_hatch_lines(image, target, spacing, width, angle, contour=True)
+    else:
+        lines = _tone_hatch_lines(
+            image, target, spacing, width, angle, normal_mask=normal_mask
+        )
     darkness = ImageOps.invert(ImageOps.grayscale(image))
     stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
     return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
@@ -298,12 +334,40 @@ def _tone_tangent(
     return tx, ty
 
 
+
+def _surface_tangent(
+    normals: Image.Image, x: float, y: float, previous: tuple[float, float]
+) -> tuple[float, float]:
+    """Projected isodepth tangent from camera-space 3D surface normals.
+
+    Camera Y points up, while image Y points down. Front-facing surfaces
+    have no stable projected depth direction, so retain the previous angle.
+    """
+
+    px = max(0, min(normals.width - 1, round(x)))
+    py = max(0, min(normals.height - 1, round(y)))
+    r, g, _, alpha = cast(tuple[int, int, int, int], normals.getpixel((px, py)))
+    if alpha < 128:
+        return previous
+    nx = r / 127.5 - 1.0
+    ny = 1.0 - g / 127.5
+    magnitude = math.hypot(nx, ny)
+    if magnitude < 0.08:
+        return previous
+    tx, ty = -ny / magnitude, nx / magnitude
+    if tx * previous[0] + ty * previous[1] < 0:
+        return -tx, -ty
+    return tx, ty
+
+
 def _trace_tone(
     gray: Image.Image,
     target: Image.Image,
     origin: tuple[int, int],
     direction: tuple[float, float],
     spacing: float,
+    *,
+    normal_mask: Image.Image | None = None,
 ) -> list[tuple[float, float]]:
     """Walk a short curved stroke without leaving the requested target."""
 
@@ -312,7 +376,11 @@ def _trace_tone(
     x, y = float(origin[0]), float(origin[1])
     points: list[tuple[float, float]] = []
     for _ in range(steps):
-        wanted = _tone_tangent(gray, x, y, direction)
+        wanted = (
+            _surface_tangent(normal_mask, x, y, direction)
+            if normal_mask is not None
+            else _tone_tangent(gray, x, y, direction)
+        )
         vx = 0.35 * direction[0] + 0.65 * wanted[0]
         vy = 0.35 * direction[1] + 0.65 * wanted[1]
         magnitude = math.hypot(vx, vy)
@@ -336,8 +404,9 @@ def _tone_hatch_lines(
     angle: float,
     *,
     contour: bool = False,
+    normal_mask: Image.Image | None = None,
 ) -> Image.Image:
-    """Draw short strokes along tonal or object-silhouette contours."""
+    """Draw short strokes along tonal, silhouette or surface-normal contours."""
 
     lines = Image.new("L", image.size, 0)
     box = target.getbbox()
@@ -350,7 +419,7 @@ def _tone_hatch_lines(
     if estimated > 250_000:
         raise JingyuError(
             "tool.invalid_arguments",
-            "tone hatching exceeds the stroke budget",
+            "curved hatching exceeds the stroke budget",
             hint="Increase spacing or paint a smaller target.",
         )
 
@@ -372,9 +441,22 @@ def _tone_hatch_lines(
             if offset < 0:
                 continue
             sx, sy = x + offset % tile.width, y + offset // tile.width
-            initial = _tone_tangent(gray, sx, sy, fallback)
-            backward = _trace_tone(gray, target, (sx, sy), (-initial[0], -initial[1]), spacing)
-            forward = _trace_tone(gray, target, (sx, sy), initial, spacing)
+            initial = (
+                _surface_tangent(normal_mask, sx, sy, fallback)
+                if normal_mask is not None
+                else _tone_tangent(gray, sx, sy, fallback)
+            )
+            backward = _trace_tone(
+                gray,
+                target,
+                (sx, sy),
+                (-initial[0], -initial[1]),
+                spacing,
+                normal_mask=normal_mask,
+            )
+            forward = _trace_tone(
+                gray, target, (sx, sy), initial, spacing, normal_mask=normal_mask
+            )
             points = [*reversed(backward), (float(sx), float(sy)), *forward]
             # A one-pixel-wide part may not admit any continuous stroke segment.
             draw.point((sx, sy), fill=255)
