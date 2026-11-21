@@ -14,6 +14,7 @@ from jingyu.style import (
     _colour_edges,
     _crayon_wax_masks,
     _pastel_strokes,
+    _screenprint_plates,
     _stippling_centers,
     apply_style,
     flatten,
@@ -890,3 +891,56 @@ def test_crayon_keeps_alpha_and_is_deterministic_on_small_images(size: tuple[int
     assert painted.size == size
     assert painted.getchannel("A").tobytes() == source.getchannel("A").tobytes()
     assert painted.tobytes() == apply_style(source, None, options).tobytes()
+
+
+def test_screenprint_independent_plates_overlap_and_keep_unprinted_gaps() -> None:
+    source = Image.new("RGB", (210, 140), (70, 94, 130))
+    c, m, y = _screenprint_plates(source, 1.0, 33)
+    assert c.tobytes() != m.tobytes()
+    assert c.tobytes() != y.tobytes()
+    assert m.tobytes() != y.tobytes()
+    assert c.tobytes() == _screenprint_plates(source, 1.0, 33)[0].tobytes()
+    assert c.tobytes() != _screenprint_plates(source, 1.0, 34)[0].tobytes()
+    pixels = list(zip(c.getdata(), m.getdata(), y.getdata(), strict=True))
+    assert any(a and b for a, b, _ in pixels)
+    assert any(b and d for _, b, d in pixels)
+    assert any(not a and not b and not d for a, b, d in pixels)
+
+
+def test_screenprint_separations_follow_hue_and_do_not_wrap_from_edge() -> None:
+    source = Image.new("RGB", (240, 100), (255, 255, 255))
+    painter = ImageDraw.Draw(source)
+    painter.rectangle((80, 0, 159, 99), fill=(211, 46, 37))
+    painter.rectangle((160, 0, 239, 99), fill=(36, 56, 208))
+    cyan, _, yellow = _screenprint_plates(source, 1.0, 11)
+
+    def coverage(mask: Image.Image, x0: int, x1: int) -> int:
+        return sum(mask.getpixel((x, y)) > 0 for x in range(x0, x1) for y in range(100))
+
+    assert coverage(cyan, 175, 225) > coverage(cyan, 95, 145)
+    assert coverage(yellow, 95, 145) > coverage(yellow, 175, 225)
+    result = apply_style(source, None, {"preset": "screenprint", "paper": 0, "seed": 11})
+    assert all(result.getpixel((x, y)) == (251, 248, 239) for x in range(40) for y in range(100))
+    red = [result.getpixel((x, y)) for x in range(100, 140) for y in range(100)]
+    blue = [result.getpixel((x, y)) for x in range(180, 220) for y in range(100)]
+    assert any(r > b + 75 for r, _, b in red)
+    assert any(b > r + 75 for r, _, b in blue)
+
+
+def test_screenprint_does_not_wrap_plate_at_opposite_canvas_edge() -> None:
+    source = Image.new("RGB", (140, 90), (255, 255, 255))
+    ImageDraw.Draw(source).rectangle((0, 0, 21, 89), fill=(19, 35, 70))
+    result = apply_style(source, None, {"preset": "screenprint", "paper": 0, "seed": 24})
+    assert all(
+        result.getpixel((x, y)) == (251, 248, 239) for x in range(90, 140) for y in range(90)
+    )
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 30), (2, 2), (7, 5), (31, 9)])
+def test_screenprint_preserves_alpha_and_seed_on_narrow_inputs(size: tuple[int, int]) -> None:
+    source = Image.new("RGBA", size, (78, 104, 166, 113))
+    spec = {"preset": "screenprint", "paper": 0, "seed": 9}
+    result = apply_style(source, None, spec)
+    assert result.size == size
+    assert result.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+    assert result.tobytes() == apply_style(source, None, spec).tobytes()

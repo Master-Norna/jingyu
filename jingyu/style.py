@@ -927,38 +927,57 @@ def _crayon(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
     return _on(drawing, paper_texture(image.size, seed + 151, paper * 0.65))
 
 
+def _screenprint_plates(
+    image: Image.Image, scale: float, seed: int
+) -> tuple[Image.Image, Image.Image, Image.Image]:
+    """Three individually registered CMY halftone masks with no edge wrapping."""
+
+    flat = image.quantize(
+        colors=6, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+    ).convert("RGB")
+    width, height = flat.size
+    plates: list[Image.Image] = []
+    for layer, band in enumerate(("R", "G", "B")):
+        # Each positive ink separation gets its own screen pitch and phase.
+        # Separate grids avoid the false impression of one black dotted plate.
+        pigment = ImageOps.invert(flat.getchannel(band))
+        pitch = max(5, round(11 * scale) + layer)
+        plate = Image.new("L", flat.size, 0)
+        draw = ImageDraw.Draw(plate)
+        key = ((seed + 173) * 73856093 ^ (layer + 1) * 19349663) & 0xFFFFFFFF
+        dx = ((key >> 8) % 5) - 2
+        dy = ((key >> 15) % 5) - 2
+        for row, y in enumerate(range(0, height, pitch)):
+            row_shift = (row & 1) * (pitch // (3 if layer == 2 else 2))
+            for x in range(0, width, pitch):
+                px = min(width - 1, x + pitch // 2)
+                py = min(height - 1, y + pitch // 2)
+                amount = cast(int, pigment.getpixel((px, py)))
+                if amount < 16:
+                    continue
+                radius = max(0.65, pitch * 0.47 * math.sqrt(amount / 255))
+                cx, cy = px + dx + row_shift, py + dy
+                draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=255)
+        plates.append(plate)
+    return plates[0], plates[1], plates[2]
+
+
 def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Limit ink colours and print a separate, slightly misregistered halftone plate."""
+    """Build separate colour screens and subtractively overprint their inks."""
 
-    flat = image.quantize(colors=6, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
-    flat_rgb = flat.convert("RGB")
+    cyan, magenta, yellow = _screenprint_plates(image, scale, seed)
     sheet = Image.new("RGB", image.size, (251, 248, 239))
-    printed = Image.blend(flat_rgb, sheet, 0.10)
-    gray = ImageOps.grayscale(flat_rgb)
-    dots = Image.new("L", image.size, 0)
-    draw = ImageDraw.Draw(dots)
-    pitch = max(5, round(11 * scale))
-    jitter = seed % 3 - 1
-    for y in range(0, image.height, pitch):
-        for x in range(0, image.width, pitch):
-            px = min(image.width - 1, max(0, x + pitch // 2 + jitter))
-            py = min(image.height - 1, max(0, y + pitch // 2 - jitter))
-            level = cast(int, gray.getpixel((px, py)))
-            darkness = (255 - level) / 255
-            if darkness < 0.12:
-                continue
-            radius = max(0.65, pitch * 0.42 * math.sqrt(darkness))
-            draw.ellipse((px - radius, py - radius, px + radius, py + radius), fill=175)
-    ink = Image.new("RGB", image.size, (35, 39, 48))
-    printed = Image.composite(ink, printed, dots)
-
-    # The second ink plate is shifted without wraparound, so the opposite
-    # edges of the page cannot bleed together.
-    edges = value_edges(flat_rgb, max(1.0, scale), 40)
-    shifted = Image.new("L", image.size, 0)
-    shifted.paste(edges, (1, 0))
-    fringe = ImageChops.subtract(shifted, edges).point(lambda v: v * 2 // 5)
-    printed = Image.composite(Image.new("RGB", image.size, (183, 64, 81)), printed, fringe)
+    white = Image.new("RGB", image.size, (255, 255, 255))
+    printed = sheet
+    # Transparent ink overlaps darken through channel multiplication, rather
+    # than overwriting a pre-coloured photographic base with decorative dots.
+    for mask, colour in (
+        (cyan, (36, 212, 217)),
+        (magenta, (216, 52, 210)),
+        (yellow, (239, 218, 49)),
+    ):
+        ink = Image.composite(Image.new("RGB", image.size, colour), white, mask)
+        printed = ImageChops.multiply(printed, ink)
     return _on(printed, paper_texture(image.size, seed + 157, paper * 0.45))
 
 
