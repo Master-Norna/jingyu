@@ -184,8 +184,9 @@ GUIDE_WORKFLOW = [
     "render stays beside it (view render). For a series, keep a picture charter file and "
     "check_charter each picture against it: it answers with questions, not a score.",
     "For local painted changes after rendering, paint_candidate can wash, hatch or ink "
-    "the selected object, part or rectangle without rerunning Blender. Review each "
-    "immutable painted candidate against its source, then paint again as needed.",
+    "the selected object, part or rectangle without rerunning Blender. For hatch, use "
+    "flow 'tone' for short strokes following tonal contours, or the default 'straight' "
+    "for parallel lines. Review each immutable candidate against its source.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -881,6 +882,14 @@ _PAINT_ACTION = {
             "default": 8,
             "description": "Hatch line spacing in pixels.",
         },
+        "flow": {
+            "enum": ["straight", "tone"],
+            "default": "straight",
+            "description": (
+                "Hatch direction: straight keeps parallel lines; tone bends short "
+                "strokes along luminance contours (not 3D surface normals)."
+            ),
+        },
         "width": {
             "type": "number",
             "minimum": 0,
@@ -889,6 +898,12 @@ _PAINT_ACTION = {
             "description": "Hatch or edge stroke width in pixels.",
         },
     },
+    "allOf": [
+        {
+            "if": {"properties": {"op": {"const": "hatch"}}, "required": ["op"]},
+            "else": {"not": {"required": ["flow"]}},
+        }
+    ],
 }
 
 REGISTRY.add(
