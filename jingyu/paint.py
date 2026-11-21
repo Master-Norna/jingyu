@@ -401,7 +401,6 @@ def _trace_tone(
     return points
 
 
-
 def _draw_tapered_stroke(
     draw: ImageDraw.ImageDraw,
     points: Sequence[tuple[float, float]],

@@ -610,9 +610,14 @@ def test_taper_validation_and_immutable_recipe(make_candidate: CandidateFactory)
     with pytest.raises(JingyuError) as exc:
         apply_paint(
             Image.new("RGB", (40, 40)),
-            [{"op": "hatch", "flow": "straight", "taper": 0.5, "target": {
-                "region": {"x0": 0, "y0": 0, "x1": 40, "y1": 40}
-            }}],
+            [
+                {
+                    "op": "hatch",
+                    "flow": "straight",
+                    "taper": 0.5,
+                    "target": {"region": {"x0": 0, "y0": 0, "x1": 40, "y1": 40}},
+                }
+            ],
         )
     assert exc.value.code == "tool.invalid_arguments"
 
@@ -622,13 +627,15 @@ def test_tapered_curves_preserve_stroke_budget() -> None:
     with pytest.raises(JingyuError) as exc:
         apply_paint(
             image,
-            [{
-                "op": "hatch",
-                "flow": "tone",
-                "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
-                "spacing": 3,
-                "taper": 1,
-            }],
+            [
+                {
+                    "op": "hatch",
+                    "flow": "tone",
+                    "target": {"region": {"u0": 0, "v0": 0, "u1": 1, "v1": 1}},
+                    "spacing": 3,
+                    "taper": 1,
+                }
+            ],
         )
     assert exc.value.code == "tool.invalid_arguments"
     assert "spacing" in (exc.value.hint or "")
