@@ -255,8 +255,13 @@ def _edge_ink(image: Image.Image, target: Image.Image, operation: Mapping[str, A
     width = float(operation.get("width", 1.5))
     if width <= 0:
         return image
-    kernel = max(3, math.ceil(width) * 2 + 1)
-    boundary = ImageChops.subtract(target, target.filter(ImageFilter.MinFilter(kernel)))
+    radius = max(1, math.ceil(width))
+    kernel = radius * 2 + 1
+    padded = ImageOps.expand(target, border=radius, fill=0)
+    eroded = padded.filter(ImageFilter.MinFilter(kernel)).crop(
+        (radius, radius, radius + target.width, radius + target.height)
+    )
+    boundary = ImageChops.subtract(target, eroded)
     return _composite(
         image,
         boundary,
