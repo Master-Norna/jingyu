@@ -343,9 +343,7 @@ def _tone_hatch_lines(
     gray = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(1.5))
     # Choose one real target pixel per tile, not a lattice centre that may miss
     # thin, diagonal or fragmented parts altogether.
-    eligible = ImageChops.multiply(
-        target, gray.point(lambda value: 255 if value < 250 else 0)
-    )
+    eligible = ImageChops.multiply(target, gray.point(lambda value: 255 if value < 250 else 0))
     fallback = (math.cos(angle), math.sin(angle))
     draw = ImageDraw.Draw(lines)
     on_pixel = bytes((255,))
@@ -357,9 +355,7 @@ def _tone_hatch_lines(
                 continue
             sx, sy = x + offset % tile.width, y + offset // tile.width
             initial = _tone_tangent(gray, sx, sy, fallback)
-            backward = _trace_tone(
-                gray, target, (sx, sy), (-initial[0], -initial[1]), spacing
-            )
+            backward = _trace_tone(gray, target, (sx, sy), (-initial[0], -initial[1]), spacing)
             forward = _trace_tone(gray, target, (sx, sy), initial, spacing)
             points = [*reversed(backward), (float(sx), float(sy)), *forward]
             # A one-pixel-wide part may not admit any continuous stroke segment.
