@@ -1069,10 +1069,8 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
     # Thousands of isolated one-pixel colour flecks should not spawn thousands
     # of expensive shadow layers. Preserve their pigments as flat cut scraps.
     major = [region for region in regions if region[1] >= shadow_area][:256]
-    minor = [region for region in regions if region not in major] if len(regions) <= 256 else []
-    if len(regions) > 256:
-        major_ids = {id(region) for region in major}
-        minor = [region for region in regions if id(region) not in major_ids]
+    major_ids = {id(region) for region in major}
+    minor = [region for region in regions if id(region) not in major_ids]
 
     for colour, _, bounds, spans in major:
         left, top, right, bottom = bounds
