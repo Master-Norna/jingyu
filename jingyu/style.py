@@ -1037,9 +1037,7 @@ def _papercut_components(
     for index in range(len(runs)):
         grouped.setdefault(root(index), []).append(index)
 
-    components: list[
-        tuple[int, int, tuple[int, int, int, int], list[tuple[int, int, int]]]
-    ] = []
+    components: list[tuple[int, int, tuple[int, int, int, int], list[tuple[int, int, int]]]] = []
     for indices in grouped.values():
         colour = runs[indices[0]][0]
         left = min(runs[i][2] for i in indices)
@@ -1056,9 +1054,7 @@ def _papercut_components(
 def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
     """Layer connected cut-paper shapes with silhouettes and cast-shadow rims."""
 
-    indexed = image.quantize(
-        colors=7, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
-    )
+    indexed = image.quantize(colors=7, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     palette = indexed.getpalette()
     if palette is None:
         raise ValueError("quantized image has no palette")
