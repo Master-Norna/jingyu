@@ -190,7 +190,8 @@ GUIDE_WORKFLOW = [
     "selected object's visible silhouette independently of shadows, or the default "
     "'straight' for parallel lines. Contour requires an object/part ID target and "
     "does not recover 3D surface normals; use 'surface' with a rendered "
-    "normal pass for camera-space shape directions. Review the new candidate.",
+    "normal pass for camera-space shape directions. For curved hatching, set "
+    "taper (0–1) for lighter, narrower stroke starts and ends. Review the new candidate.",
     "When you cannot say why it fails, get_constitution and ask its questions of the "
     "picture (J1 whole before parts, J2 hierarchy, J3 relations, J4 plausibility, J5 "
     "feeling); clauses are questions, not reasons to accept.",
@@ -905,6 +906,15 @@ _PAINT_ACTION = {
             "default": 1.5,
             "description": "Hatch or edge stroke width in pixels.",
         },
+        "taper": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": (
+                "Curved hatching only (tone, contour, surface): 0 keeps the historical "
+                "uniform stroke; 1 makes its ends thinner and lighter."
+            ),
+        },
     },
     "allOf": [
         {
@@ -918,6 +928,16 @@ _PAINT_ACTION = {
             },
             "then": {
                 "properties": {"target": {"not": {"required": ["region"]}}},
+            },
+        },
+        {
+            "if": {"required": ["taper"]},
+            "then": {
+                "properties": {
+                    "op": {"const": "hatch"},
+                    "flow": {"enum": ["tone", "contour", "surface"]},
+                },
+                "required": ["op", "flow"],
             },
         },
     ],

@@ -158,6 +158,8 @@ def apply_paint(
         kind = operation["op"]
         if kind != "hatch" and "flow" in operation:
             raise JingyuError("tool.invalid_arguments", "flow is only supported for hatch")
+        if kind != "hatch" and "taper" in operation:
+            raise JingyuError("tool.invalid_arguments", "taper is only supported for hatch")
         if kind == "wash":
             result = _wash(result, mask, operation)
         elif kind == "hatch":
@@ -265,6 +267,14 @@ def _hatch(
         )
     if flow not in ("straight", "tone", "contour", "surface"):
         raise JingyuError("tool.invalid_arguments", f"unknown hatch flow {flow!r}")
+    taper = float(operation.get("taper", 0))
+    if not 0 <= taper <= 1:
+        raise JingyuError("tool.invalid_arguments", "taper must be between 0 and 1")
+    if "taper" in operation and flow == "straight":
+        raise JingyuError(
+            "tool.invalid_arguments",
+            "taper requires a curved hatch flow: tone, contour or surface",
+        )
     if flow == "surface" and normal_mask is None:
         raise JingyuError(
             "candidate.missing_pass", "surface hatching requires a camera-space normal pass"
@@ -276,11 +286,13 @@ def _hatch(
     if flow == "straight":
         lines = _straight_hatch_lines(image.size, spacing, width, angle)
     elif flow == "tone":
-        lines = _tone_hatch_lines(image, target, spacing, width, angle)
+        lines = _tone_hatch_lines(image, target, spacing, width, angle, taper=taper)
     elif flow == "contour":
-        lines = _tone_hatch_lines(image, target, spacing, width, angle, contour=True)
+        lines = _tone_hatch_lines(image, target, spacing, width, angle, contour=True, taper=taper)
     else:
-        lines = _tone_hatch_lines(image, target, spacing, width, angle, normal_mask=normal_mask)
+        lines = _tone_hatch_lines(
+            image, target, spacing, width, angle, normal_mask=normal_mask, taper=taper
+        )
     darkness = ImageOps.invert(ImageOps.grayscale(image))
     stroke = ImageChops.multiply(ImageChops.multiply(lines, darkness), target)
     return _composite(image, stroke, str(operation.get("color", "#27211e")), strength)
@@ -391,6 +403,37 @@ def _trace_tone(
     return points
 
 
+def _draw_tapered_stroke(
+    draw: ImageDraw.ImageDraw,
+    points: Sequence[tuple[float, float]],
+    width: float,
+    taper: float,
+) -> None:
+    """Rasterize a short stroke with a deterministic start/end pressure envelope.
+
+    A stroke's middle is fully inked; its endpoints shrink and lighten. No
+    random state or whole-image per-stroke buffers are used.
+    """
+
+    if len(points) == 1:
+        draw.point(points[0], fill=255)
+        return
+    last = len(points) - 1
+    for index, (x, y) in enumerate(points):
+        pressure = math.sin(math.pi * index / last)
+        attenuation = taper * (1 - pressure)
+        diameter = max(1.0, width * (1 - 0.8 * attenuation))
+        opacity = max(1, round(255 * (1 - 0.8 * attenuation)))
+        if index:
+            draw.line(
+                (points[index - 1], (x, y)),
+                fill=opacity,
+                width=max(1, round(diameter)),
+            )
+        radius = diameter / 2
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=opacity)
+
+
 def _tone_hatch_lines(
     image: Image.Image,
     target: Image.Image,
@@ -400,6 +443,7 @@ def _tone_hatch_lines(
     *,
     contour: bool = False,
     normal_mask: Image.Image | None = None,
+    taper: float = 0.0,
 ) -> Image.Image:
     """Draw short strokes along tonal, silhouette or surface-normal contours."""
 
@@ -411,7 +455,7 @@ def _tone_hatch_lines(
     pitch = max(2, round(spacing))
     x0, y0, x1, y1 = box
     estimated = math.ceil((x1 - x0) / pitch) * math.ceil((y1 - y0) / pitch)
-    if estimated > 250_000:
+    if estimated > (50_000 if taper else 250_000):
         raise JingyuError(
             "tool.invalid_arguments",
             "curved hatching exceeds the stroke budget",
@@ -451,10 +495,14 @@ def _tone_hatch_lines(
             )
             forward = _trace_tone(gray, target, (sx, sy), initial, spacing, normal_mask=normal_mask)
             points = [*reversed(backward), (float(sx), float(sy)), *forward]
-            # A one-pixel-wide part may not admit any continuous stroke segment.
-            draw.point((sx, sy), fill=255)
-            if len(points) >= 2:
-                draw.line(points, fill=255, width=max(1, round(width)), joint="curve")
+            if taper:
+                _draw_tapered_stroke(draw, points, width, taper)
+            else:
+                # Preserve every existing pixel when taper is omitted or zero.
+                # A one-pixel-wide part may not admit a continuous segment.
+                draw.point((sx, sy), fill=255)
+                if len(points) >= 2:
+                    draw.line(points, fill=255, width=max(1, round(width)), joint="curve")
     return lines
 
 
