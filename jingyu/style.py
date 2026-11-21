@@ -150,7 +150,6 @@ def value_edges(image: Image.Image, width: float, threshold: int) -> Image.Image
     return _thicken(found, width * 0.7)
 
 
-
 def _colour_edges(image: Image.Image, width: float, threshold: int) -> Image.Image:
     """Detect pigment boundaries even when neighbouring hues share luminance."""
 
@@ -376,10 +375,7 @@ def _oil(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Ima
                 cast(tuple[int, int, int], image.getpixel(p0)),
                 cast(tuple[int, int, int], image.getpixel(p1)),
             )
-            if any(
-                max(abs(edge[i] - color[i]) for i in range(3)) > 65
-                for edge in edge_colors
-            ):
+            if any(max(abs(edge[i] - color[i]) for i in range(3)) > 65 for edge in edge_colors):
                 continue  # Do not drag a coloured stroke across an object edge.
             body = tuple(max(0, channel - 10) for channel in color)
             ridge = tuple(min(255, channel + 18) for channel in color)
@@ -633,9 +629,9 @@ def _mosaic(image: Image.Image, scale: float, paper: float, seed: int) -> Image.
             # Average each tile footprint: a single centre pixel aliases small objects.
             colour = cast(
                 tuple[int, int, int],
-                image.crop(
-                    (x, y, min(image.width, x + pitch), min(image.height, y + pitch))
-                ).resize((1, 1), Image.Resampling.BOX).getpixel((0, 0)),
+                image.crop((x, y, min(image.width, x + pitch), min(image.height, y + pitch)))
+                .resize((1, 1), Image.Resampling.BOX)
+                .getpixel((0, 0)),
             )
             key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 127) * 83492791) & 0xFFFFFFFF
             variation = ((key >> 8) % 13 - 6) * 0.75
