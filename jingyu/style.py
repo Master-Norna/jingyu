@@ -512,9 +512,7 @@ def _stippling_centers(shade: Image.Image, scale: float, seed: int) -> list[tupl
 
     for row in range((height + pitch - 1) // pitch + 1):
         for col in range((width + pitch - 1) // pitch + 1):
-            key = _stipple_hash(
-                (col + 1) * 73856093 ^ (row + 1) * 19349663 ^ (seed + 1) * 83492791
-            )
+            key = _stipple_hash((col + 1) * 73856093 ^ (row + 1) * 19349663 ^ (seed + 1) * 83492791)
             x = col * pitch + (pitch // 2 if row & 1 else 0)
             x += round(((key & 255) / 255 - 0.5) * 0.74 * pitch)
             y = row * pitch + round((((key >> 8) & 255) / 255 - 0.5) * 0.74 * pitch)
