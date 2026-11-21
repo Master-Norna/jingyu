@@ -341,18 +341,28 @@ def _tone_hatch_lines(
         )
 
     gray = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(1.5))
+    # Choose one real target pixel per tile, not a lattice centre that may miss
+    # thin, diagonal or fragmented parts altogether.
+    eligible = ImageChops.multiply(
+        target, gray.point(lambda value: 255 if value < 250 else 0)
+    )
     fallback = (math.cos(angle), math.sin(angle))
     draw = ImageDraw.Draw(lines)
-    left = x0 + min(pitch // 2, (x1 - x0 - 1) // 2)
-    top = y0 + min(pitch // 2, (y1 - y0 - 1) // 2)
-    for y in range(top, y1, pitch):
-        for x in range(left, x1, pitch):
-            if target.getpixel((x, y)) == 0 or cast(int, gray.getpixel((x, y))) >= 250:
+    for y in range(y0, y1, pitch):
+        for x in range(x0, x1, pitch):
+            tile = eligible.crop((x, y, min(x + pitch, x1), min(y + pitch, y1)))
+            offset = tile.tobytes().find(b"\\xff")
+            if offset < 0:
                 continue
-            initial = _tone_tangent(gray, x, y, fallback)
-            backward = _trace_tone(gray, target, (x, y), (-initial[0], -initial[1]), spacing)
-            forward = _trace_tone(gray, target, (x, y), initial, spacing)
-            points = [*reversed(backward), (float(x), float(y)), *forward]
+            sx, sy = x + offset % tile.width, y + offset // tile.width
+            initial = _tone_tangent(gray, sx, sy, fallback)
+            backward = _trace_tone(
+                gray, target, (sx, sy), (-initial[0], -initial[1]), spacing
+            )
+            forward = _trace_tone(gray, target, (sx, sy), initial, spacing)
+            points = [*reversed(backward), (float(sx), float(sy)), *forward]
+            # A one-pixel-wide part may not admit any continuous stroke segment.
+            draw.point((sx, sy), fill=255)
             if len(points) >= 2:
                 draw.line(points, fill=255, width=max(1, round(width)), joint="curve")
     return lines
