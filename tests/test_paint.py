@@ -621,6 +621,17 @@ def test_taper_validation_and_immutable_recipe(make_candidate: CandidateFactory)
         )
     assert exc.value.code == "tool.invalid_arguments"
 
+    with pytest.raises(JingyuError) as exc:
+        apply_paint(
+            Image.new("RGB", (40, 40)),
+            [{
+                "op": "wash",
+                "taper": 0.5,
+                "target": {"region": {"x0": 0, "y0": 0, "x1": 40, "y1": 40}},
+            }],
+        )
+    assert exc.value.code == "tool.invalid_arguments"
+
 
 def test_tapered_curves_preserve_stroke_budget() -> None:
     image = Image.new("RGB", (800, 800), (40, 40, 40))

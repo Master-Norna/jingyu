@@ -158,6 +158,8 @@ def apply_paint(
         kind = operation["op"]
         if kind != "hatch" and "flow" in operation:
             raise JingyuError("tool.invalid_arguments", "flow is only supported for hatch")
+        if kind != "hatch" and "taper" in operation:
+            raise JingyuError("tool.invalid_arguments", "taper is only supported for hatch")
         if kind == "wash":
             result = _wash(result, mask, operation)
         elif kind == "hatch":
