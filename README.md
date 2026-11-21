@@ -44,6 +44,27 @@ jingyu --workspace ./workspace render --final examples/scenes/eight-vessels.json
 
 Blender 装在非默认位置时，用环境变量 `JINGYU_BLENDER` 指向可执行文件。
 
+## 局部绘画（无需重新渲染）
+
+已有候选可以继续用 `paint_candidate` 进行局部处理：`wash` 铺色、`hatch` 排线、
+`edge_ink` 勾边。目标可以是对象、装配部件，或像素 / 归一化坐标区域。每次绘画
+生成新候选，不修改原图；结果可以用 `view_candidate` 对比。
+
+```json
+{
+  "candidate_id": "c_20260926T120000Z_1a2b3c4d_5e6f",
+  "base": "image",
+  "operations": [
+    {"op": "wash", "target": {"object": "vase"}, "color": "#ba936e", "strength": 0.3},
+    {"op": "hatch", "target": {"object": "vase"}, "color": "#302a25",
+     "angle": 45, "spacing": 8, "width": 1.5}
+  ]
+}
+```
+
+这里的候选 ID 仅为格式示例。工具也可通过 CLI：
+`jingyu --workspace ./workspace call paint_candidate --args '<JSON>'` 调用。
+
 ## 接入模型（MCP）
 
 ```json
