@@ -660,11 +660,13 @@ def _gouache(image: Image.Image, scale: float, paper: float, seed: int) -> Image
                 (min(width - 1, max(0, round(x0))), min(height - 1, max(0, round(y0)))),
                 (min(width - 1, max(0, round(x1))), min(height - 1, max(0, round(y1)))),
             )
-            if any(
-                max(abs(channel - other) for channel, other in zip(center, image.getpixel(pos)))
-                > 48
-                for pos in endpoints
-            ):
+            crosses_edge = False
+            for endpoint in endpoints:
+                other_colour = cast(tuple[int, int, int], image.getpixel(endpoint))
+                if max(abs(center[i] - other_colour[i]) for i in range(3)) > 48:
+                    crosses_edge = True
+                    break
+            if crosses_edge:
                 continue  # A single paint dab must not bridge two coloured objects.
 
             pressure = 115 + ((key >> 19) & 63)
