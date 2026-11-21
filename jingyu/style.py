@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from PIL import Image, ImageChops, ImageDraw, ImageEnhance, ImageFilter, ImageMath, ImageOps
 
@@ -400,8 +400,11 @@ def _stippling(image: Image.Image, scale: float, paper: float, seed: int) -> Ima
     dots = ImageDraw.Draw(ink)
     for y in range(0, height, pitch):
         for x in range(0, width, pitch):
-            darkness = shade.getpixel(
-                (min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))
+            darkness = cast(
+                int,
+                shade.getpixel(
+                    (min(width - 1, x + pitch // 2), min(height - 1, y + pitch // 2))
+                ),
             )
             for mark in range(3):
                 key = (
