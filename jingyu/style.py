@@ -957,9 +957,7 @@ def _screenprint_plates(
                     continue
                 radius = max(0.65, pitch * 0.47 * math.sqrt(amount / 255))
                 cx, cy = px + dx + row_shift, py + dy
-                draw.ellipse(
-                    (cx - radius, cy - radius, cx + radius, cy + radius), fill=255
-                )
+                draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=255)
         plates.append(plate)
     return plates[0], plates[1], plates[2]
 
