@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 from helpers import CRATE_BOX, VASE_BOX, synthetic_mask
 from PIL import Image, ImageDraw
@@ -115,7 +117,7 @@ def test_new_styles_are_neutral_and_preserve_light_dark_structure(preset: str) -
     bright = painted.getpixel((24, 20))
     dark = painted.getpixel((72, 20))
     assert sum(dark) < sum(bright) * 0.7
-    assert all(abs(a - b) < 25 for pixel in (bright, dark) for a, b in zip(pixel, pixel[1:]))
+    assert all(abs(a - b) < 25 for pixel in (bright, dark) for a, b in pairwise(pixel))
 
 
 @pytest.mark.parametrize("preset", ["charcoal", "woodcut"])
