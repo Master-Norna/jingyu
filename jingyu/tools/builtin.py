@@ -28,6 +28,7 @@ from ..scene.patch import OPS as PATCH_OPS
 from ..scene.patch import apply_patch
 from ..sightlines import background_openings
 from ..solve import FramingRequest, SunRequest, aim_sun, frame_subject
+from ..style import PRESETS as STYLE_PRESETS
 from ..views import VIEWS, render_view
 from .registry import ImagePayload, Tool, ToolContext, ToolRegistry, ToolResult
 
@@ -180,12 +181,12 @@ GUIDE_WORKFLOW = [
     "object's rendered colour next to its material colour, so colour drift from warm or "
     "cool light shows as a number; view any image with a region to see details up "
     "close.",
-    "For a painted look set render.style (ink, watercolor, oil, cel, charcoal, woodcut, "
-    "pencil, stippling, gouache, pastel, etching, mosaic, crayon, screenprint, papercut, "
-    "sumi, stainedglass, cyanotype, frottage, embroidery, glaze); "
-    "the photographic "
-    "render stays beside it (view render). For a series, keep a picture charter file and "
-    "check_charter each picture against it: it answers with questions, not a score.",
+    "For a painted look, choose render.style.preset from get_guide.style_presets "
+    "(the same choices and defaults are in get_scene_schema). Set strength, paper "
+    "and seed explicitly when comparing media. The photographic render stays "
+    "beside the styled full image: view_candidate with view render shows the "
+    "original, and full shows the painted result. For a series, keep a picture "
+    "charter and check_charter each picture against it: questions, not a score.",
     "For local painted changes after rendering, paint_candidate can wash, hatch or ink "
     "the selected object, part or rectangle without rerunning Blender. For hatch, use "
     "flow 'tone' for strokes following tonal contours, 'contour' to follow the "
@@ -220,6 +221,7 @@ def _get_guide(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "and each pixel can be traced back to the scene entry that produced it."
             ),
             "workflow": GUIDE_WORKFLOW,
+            "style_presets": dict(STYLE_PRESETS),
             "conventions": conventions.summary(),
             "scene_schema": SCENE_SCHEMA,
             "tools": [{"name": t.name, "title": t.title} for t in REGISTRY],
@@ -652,7 +654,11 @@ REGISTRY.add(
         ),
         input_schema=_input({}),
         output_schema=_output(
-            {"workflow": {"type": "array", "items": _STRING}, "conventions": _ANY_OBJECT},
+            {
+                "workflow": {"type": "array", "items": _STRING},
+                "style_presets": {"type": "object", "additionalProperties": _STRING},
+                "conventions": _ANY_OBJECT,
+            },
             ["summary", "workflow", "conventions", "tools"],
         ),
         handler=_get_guide,

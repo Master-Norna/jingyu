@@ -17,6 +17,7 @@ from jingyu.errors import ERROR_CODES, JingyuError
 from jingyu.geometry import GEOMETRY
 from jingyu.materials import MATERIALS
 from jingyu.scene import minimal_scene, scene_schema
+from jingyu.style import PRESETS
 from jingyu.tools import REGISTRY, Tool, ToolContext, ToolRegistry, ToolResult
 from jingyu.views import VIEWS
 from jingyu.workspace import Workspace
@@ -163,6 +164,8 @@ def test_registry_add_enforces_its_rules() -> None:
 def test_get_guide(ctx: ToolContext) -> None:
     data = _invoke(ctx, "get_guide").data
     assert data["workflow"]
+    assert data["style_presets"] == PRESETS
+    assert "papercut" in data["style_presets"]
     assert data["conventions"]["up_axis"] == "Z"
     assert [t["name"] for t in data["tools"]] == REGISTRY.names()
     assert data["workspace"] == str(ctx.workspace.root)
@@ -172,6 +175,8 @@ def test_get_scene_schema(ctx: ToolContext) -> None:
     data = _invoke(ctx, "get_scene_schema").data
     assert data["schema_id"] == "jingyu.scene.v1"
     assert data["json_schema"] == scene_schema()
+    presets = data["json_schema"]["$defs"]["render"]["properties"]["style"]["properties"]
+    assert presets["preset"]["enum"] == list(PRESETS)
     assert data["example"] == minimal_scene()
 
 

@@ -114,3 +114,39 @@ def test_images_are_returned_as_image_content(
         assert base64.b64decode(image.data).startswith(b"\x89PNG")
 
     _with_client(workspace, body)
+
+
+def test_mcp_style_catalogue_matches_schema_and_validates_papercut(workspace: Workspace) -> None:
+    async def body(client: Any) -> None:
+        guide = await client.call_tool("get_guide", {})
+        schema = await client.call_tool("get_scene_schema", {})
+        assert guide.is_error is False and schema.is_error is False
+        available = guide.structured_content["style_presets"]
+        style_prop = schema.structured_content["json_schema"]["$defs"]["render"]["properties"][
+            "style"
+        ]["properties"]["preset"]
+        assert set(available) == set(style_prop["enum"])
+        assert "papercut" in available
+        scene = minimal_scene()
+        scene["render"]["style"] = {"preset": "papercut", "seed": 11, "paper": 0.35}
+        validated = await client.call_tool("validate_scene", {"scene": scene})
+        assert validated.is_error is False
+        assert validated.structured_content["valid"] is True
+        edited = await client.call_tool(
+            "edit_scene",
+            {
+                "scene": minimal_scene(),
+                "operations": [
+                    {
+                        "op": "add",
+                        "path": "/render/style",
+                        "value": {"preset": "papercut", "seed": 11, "paper": 0.35},
+                    }
+                ],
+            },
+        )
+        assert edited.is_error is False
+        assert edited.structured_content["valid"] is True
+        assert edited.structured_content["scene"]["render"]["style"]["preset"] == "papercut"
+
+    _with_client(workspace, body)

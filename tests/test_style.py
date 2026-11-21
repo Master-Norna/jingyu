@@ -13,6 +13,7 @@ from jingyu.style import (
     PRESETS,
     _colour_edges,
     _crayon_wax_masks,
+    _papercut_components,
     _pastel_strokes,
     _screenprint_plates,
     _stippling_centers,
@@ -944,3 +945,47 @@ def test_screenprint_preserves_alpha_and_seed_on_narrow_inputs(size: tuple[int, 
     assert result.size == size
     assert result.getchannel("A").tobytes() == source.getchannel("A").tobytes()
     assert result.tobytes() == apply_style(source, None, spec).tobytes()
+
+
+def test_papercut_components_separate_islands_of_same_palette_index() -> None:
+    indexed = Image.new("P", (20, 10), 0)
+    painter = ImageDraw.Draw(indexed)
+    painter.rectangle((2, 2, 5, 6), fill=1)
+    painter.rectangle((14, 2, 17, 6), fill=1)
+    islands = [region for region in _papercut_components(indexed) if region[0] == 1]
+    assert len(islands) == 2
+    assert [region[1] for region in islands] == [20, 20]
+    assert {region[2] for region in islands} == {(2, 2, 6, 7), (14, 2, 18, 7)}
+
+
+def test_papercut_components_use_four_neighbour_connectivity() -> None:
+    indexed = Image.new("P", (8, 8), 0)
+    ink = ImageDraw.Draw(indexed)
+    ink.point((2, 2), fill=1)
+    ink.point((3, 3), fill=1)
+    groups = [region for region in _papercut_components(indexed) if region[0] == 1]
+    assert len(groups) == 2
+    assert all(region[1] == 1 for region in groups)
+
+
+def test_papercut_cast_shadow_behind_connected_shape_not_entire_palette() -> None:
+    source = Image.new("RGB", (120, 84), (226, 194, 120))
+    ImageDraw.Draw(source).rectangle((26, 16, 79, 57), fill=(38, 91, 169))
+    paper = apply_style(source, None, {"preset": "papercut", "paper": 0, "seed": 9})
+    blue = paper.getpixel((50, 32))
+    cast = paper.getpixel((80, 38))
+    ground = paper.getpixel((92, 38))
+    assert blue[2] > blue[0]
+    assert sum(cast) < sum(ground) - 45
+    assert ground[0] > ground[2]
+    assert paper.getpixel((3, 3)) == paper.getpixel((3, 50))
+
+
+@pytest.mark.parametrize("size", [(1, 1), (1, 34), (2, 2), (7, 5), (30, 9)])
+def test_papercut_preserves_alpha_and_tiny_components(size: tuple[int, int]) -> None:
+    image = Image.new("RGBA", size, (52, 101, 182, 117))
+    opts = {"preset": "papercut", "paper": 0, "seed": 6}
+    drawn = apply_style(image, None, opts)
+    assert drawn.size == size
+    assert drawn.getchannel("A").tobytes() == image.getchannel("A").tobytes()
+    assert drawn.tobytes() == apply_style(image, None, opts).tobytes()

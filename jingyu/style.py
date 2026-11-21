@@ -981,33 +981,119 @@ def _screenprint(image: Image.Image, scale: float, paper: float, seed: int) -> I
     return _on(printed, paper_texture(image.size, seed + 157, paper * 0.45))
 
 
-def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
-    """Assemble region-shaped paper silhouettes rather than a regular tile grid."""
+def _papercut_components(
+    indexed: Image.Image,
+) -> list[tuple[int, int, tuple[int, int, int, int], list[tuple[int, int, int]]]]:
+    """Find four-connected paper islands using row runs, not palette indices.
 
-    # Median-cut produces coherent colour regions; each index becomes one
-    # paper shape with its own shadow. No stochastic palette training is used.
+    Runs are joined only across overlapping spans in adjacent rows. This keeps
+    separate islands of the same colour as distinct paper shapes without
+    allocating a full-size mask for every component.
+    """
+
+    width, height = indexed.size
+    pixels = indexed.tobytes()
+    runs: list[tuple[int, int, int, int]] = []
+    parents: list[int] = []
+    previous: list[int] = []
+
+    def root(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def join(left: int, right: int) -> None:
+        a, b = root(left), root(right)
+        if a != b:
+            parents[max(a, b)] = min(a, b)
+
+    for y in range(height):
+        current: list[int] = []
+        cursor = 0
+        x = 0
+        row_start = y * width
+        while x < width:
+            x0 = x
+            colour = pixels[row_start + x]
+            x += 1
+            while x < width and pixels[row_start + x] == colour:
+                x += 1
+            index = len(runs)
+            runs.append((colour, y, x0, x))
+            parents.append(index)
+            current.append(index)
+            while cursor < len(previous) and runs[previous[cursor]][3] <= x0:
+                cursor += 1
+            k = cursor
+            while k < len(previous) and runs[previous[k]][2] < x:
+                prior = previous[k]
+                if runs[prior][0] == colour:
+                    join(index, prior)
+                k += 1
+        previous = current
+
+    grouped: dict[int, list[int]] = {}
+    for index in range(len(runs)):
+        grouped.setdefault(root(index), []).append(index)
+
+    components: list[tuple[int, int, tuple[int, int, int, int], list[tuple[int, int, int]]]] = []
+    for indices in grouped.values():
+        colour = runs[indices[0]][0]
+        left = min(runs[i][2] for i in indices)
+        top = min(runs[i][1] for i in indices)
+        right = max(runs[i][3] for i in indices)
+        bottom = max(runs[i][1] for i in indices) + 1
+        area = sum(runs[i][3] - runs[i][2] for i in indices)
+        spans = [(runs[i][1], runs[i][2], runs[i][3]) for i in indices]
+        components.append((colour, area, (left, top, right, bottom), spans))
+
+    return sorted(components, key=lambda region: (-region[1], region[2][1], region[2][0]))
+
+
+def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Image.Image:
+    """Layer connected cut-paper shapes with silhouettes and cast-shadow rims."""
+
     indexed = image.quantize(colors=7, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
     palette = indexed.getpalette()
     if palette is None:
         raise ValueError("quantized image has no palette")
-    counts = indexed.histogram()
-    # Large background papers go down first; smaller shapes layer on top.
-    layers = sorted((i for i, count in enumerate(counts) if count), key=lambda i: -counts[i])
+    regions = _papercut_components(indexed)
     page = Image.new("RGB", image.size, (245, 240, 226))
-    shadow = Image.new("RGB", image.size, (80, 77, 74))
     offset = max(1, round(2 * scale))
-    for index in layers:
-        mask = indexed.point([255 if value == index else 0 for value in range(256)], mode="L")
-        # A one-pixel clearance makes adjacent paper layers legible.
-        if min(image.size) >= 3:
-            mask = mask.filter(ImageFilter.MinFilter(3))
-        shadow_mask = Image.new("L", image.size, 0)
-        shadow_mask.paste(mask, (offset, offset))
-        page = Image.composite(shadow, page, shadow_mask.point(lambda v: v // 3))
-        channels = palette[3 * index : 3 * index + 3]
-        colour = tuple(max(0, min(255, round(c * 0.91 + 15))) for c in channels)
-        patch = Image.new("RGB", image.size, colour)
-        page = Image.composite(patch, page, mask)
+    shadow_area = max(6, round(16 * scale * scale))
+    # Thousands of isolated one-pixel colour flecks should not spawn thousands
+    # of expensive shadow layers. Preserve their pigments as flat cut scraps.
+    major = [region for region in regions if region[1] >= shadow_area][:256]
+    major_ids = {id(region) for region in major}
+    minor = [region for region in regions if id(region) not in major_ids]
+
+    for colour, _, bounds, spans in major:
+        left, top, right, bottom = bounds
+        mask = Image.new("L", (right - left, bottom - top), 0)
+        ink = ImageDraw.Draw(mask)
+        for y, x0, x1 in spans:
+            ink.line((x0 - left, y - top, x1 - left - 1, y - top), fill=255)
+        # The shadow is behind its own patch, and remains visible only where
+        # a later, smaller piece does not cover it. No circular page offsets.
+        dim = Image.new("RGB", mask.size, (82, 77, 72))
+        page.paste(dim, (left + offset, top + offset), mask.point(lambda v: v * 2 // 5))
+        channels = palette[3 * colour : 3 * colour + 3]
+        tint = tuple(max(0, min(255, round(channel * 0.91 + 15))) for channel in channels)
+        page.paste(Image.new("RGB", mask.size, tint), (left, top), mask)
+
+    # Tiny regions share a mask per pigment, without abandoning their shape.
+    # This bounds the number of canvas-sized buffers for noisy source renders.
+    for colour in sorted({region[0] for region in minor}):
+        mask = Image.new("L", image.size, 0)
+        ink = ImageDraw.Draw(mask)
+        for region_colour, _, _, spans in minor:
+            if region_colour == colour:
+                for y, x0, x1 in spans:
+                    ink.line((x0, y, x1 - 1, y), fill=255)
+        channels = palette[3 * colour : 3 * colour + 3]
+        tint = tuple(max(0, min(255, round(channel * 0.91 + 15))) for channel in channels)
+        page.paste(Image.new("RGB", image.size, tint), (0, 0), mask)
     return _on(page, paper_texture(image.size, seed + 163, paper * 0.35))
 
 
