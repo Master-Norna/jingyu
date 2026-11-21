@@ -680,7 +680,7 @@ def _sumi(
                 continue
             brush.line(
                 (px, py, min(image.width - 1, px + length), max(0, py - length // 3)),
-                fill=min(255, 175 + weight // 3),
+                fill=min(255, 188 + weight // 5 + ((key >> 19) & 31)),
                 width=max(1, round(2.0 * scale)),
             )
     ink = ImageChops.lighter(washes, marks)
