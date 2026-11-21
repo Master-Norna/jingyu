@@ -104,3 +104,45 @@ def test_kuwahara_keeps_edges_and_smooths_texture() -> None:
     left = [smooth.getpixel((x, 10))[0] for x in range(4, 16)]
     assert max(left) - min(left) < 40  # texture flattened
     assert smooth.getpixel((25, 10))[0] - smooth.getpixel((14, 10))[0] > 100  # the edge survives
+
+
+@pytest.mark.parametrize("preset", ["charcoal", "woodcut"])
+def test_new_styles_are_neutral_and_preserve_light_dark_structure(preset: str) -> None:
+    image = Image.new("RGB", (96, 48), (245, 245, 245))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((48, 0, 95, 47), fill=(20, 20, 20))
+    painted = apply_style(image, None, {"preset": preset, "paper": 0, "line_width": 0})
+    bright = painted.getpixel((24, 20))
+    dark = painted.getpixel((72, 20))
+    assert sum(dark) < sum(bright) * 0.7
+    assert all(abs(a - b) < 25 for pixel in (bright, dark) for a, b in zip(pixel, pixel[1:]))
+
+
+@pytest.mark.parametrize("preset", ["charcoal", "woodcut"])
+def test_new_styles_respect_zero_outline_width(preset: str) -> None:
+    render = _render()
+    with_mask = apply_style(
+        render, synthetic_mask(), {"preset": preset, "line_width": 0}
+    )
+    without_mask = apply_style(render, None, {"preset": preset, "line_width": 0})
+    assert with_mask.tobytes() == without_mask.tobytes()
+
+
+@pytest.mark.parametrize("preset", ["charcoal", "woodcut"])
+def test_new_styles_seed_controls_repeatable_paper(preset: str) -> None:
+    image = _render()
+    options = {"preset": preset, "paper": 1.0}
+    first = apply_style(image, None, {**options, "seed": 9})
+    again = apply_style(image, None, {**options, "seed": 9})
+    changed = apply_style(image, None, {**options, "seed": 10})
+    assert first.tobytes() == again.tobytes()
+    assert first.tobytes() != changed.tobytes()
+
+
+def test_new_painting_presets_are_accepted_by_scene_validation() -> None:
+    from jingyu.scene import minimal_scene, validate_scene
+
+    for preset in ("charcoal", "woodcut"):
+        scene = minimal_scene()
+        scene["render"]["style"] = {"preset": preset}
+        assert validate_scene(scene).require_valid()["render"]["style"]["preset"] == preset
