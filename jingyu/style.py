@@ -441,9 +441,7 @@ def _charcoal(
     step = max(1, round(3 * scale))
     for y in range(0, image.height, pitch):
         for x in range(0, image.width, pitch):
-            key = (
-                (x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 31) * 83492791
-            ) & 0xFFFFFFFF
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 31) * 83492791) & 0xFFFFFFFF
             px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
             py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
             darkness = cast(int, shade.getpixel((px, py)))
@@ -453,12 +451,9 @@ def _charcoal(
             length = max(2, round((7 + ((key >> 24) & 7)) * scale))
             thickness = max(1, round((1.5 + ((key >> 20) & 3) * 0.45) * scale))
             pressure = min(95, darkness * (30 + ((key >> 27) & 15)) // 120)
-            draw.line(
-                (px - vx * length / 2, py - vy * length / 2,
-                 px + vx * length / 2, py + vy * length / 2),
-                fill=pressure,
-                width=thickness,
-            )
+            start = (px - vx * length / 2, py - vy * length / 2)
+            end = (px + vx * length / 2, py + vy * length / 2)
+            draw.line((*start, *end), fill=pressure, width=thickness)
     dry = marks.filter(ImageFilter.GaussianBlur(max(0.25, 0.38 * scale)))
     # A stroke can taper into shadow, but must never paint a blank white shape.
     dry = ImageChops.multiply(dry, shade.point(lambda value: min(255, value * 2)))
