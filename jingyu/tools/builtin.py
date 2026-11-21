@@ -19,8 +19,8 @@ from ..geometry import GEOMETRY
 from ..lighting import LightMap
 from ..locate import Box, IdMask
 from ..materials import MATERIALS
-from ..paint import paint_candidate
 from ..measure import colors_by_index, colors_by_object, object_color_report
+from ..paint import paint_candidate
 from ..render import render_scene
 from ..scene import SCENE_SCHEMA, minimal_scene, scene_schema, validate_scene
 from ..scene.diff import diff_scenes
