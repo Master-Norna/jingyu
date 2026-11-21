@@ -121,4 +121,4 @@ def glaze(image: Image.Image, scale: float, paper: Image.Image, seed: int) -> Im
     return _on(glossy, paper)
 
 
-__all__ = ["frottage", "embroidery", "glaze"]
+__all__ = ["embroidery", "frottage", "glaze"]
