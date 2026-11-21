@@ -44,6 +44,9 @@ PRESETS: dict[str, str] = {
     "crayon": "Broken, saturated wax-pencil strokes over exposed toothy paper.",
     "screenprint": "Flat limited-colour ink plates with coarse halftone and registration fringe.",
     "papercut": "Layered cut-colour silhouettes with hard paper edges and cast shadows.",
+    "sumi": "Layered monochrome ink washes, flowing brush marks and pale rice paper.",
+    "stainedglass": "Backlit colour panes enclosed by dark lead-came boundaries.",
+    "cyanotype": "Prussian-blue photographic values and pale contact-print silhouettes.",
 }
 
 #: Line widths and filter sizes are given for this image width and scaled with it.
@@ -94,6 +97,12 @@ def apply_style(
         styled = _screenprint(rgb, scale, paper, seed)
     elif preset == "papercut":
         styled = _papercut(rgb, scale, paper, seed)
+    elif preset == "sumi":
+        styled = _sumi(rgb, id_mask, line, scale, paper, seed)
+    elif preset == "stainedglass":
+        styled = _stainedglass(rgb, id_mask, line, paper, seed)
+    elif preset == "cyanotype":
+        styled = _cyanotype(rgb, id_mask, line, scale, paper, seed)
     else:
         raise ValueError(f"unknown style preset {preset!r}")
     strength = float(spec.get("strength", 1.0))
@@ -641,6 +650,103 @@ def _papercut(image: Image.Image, scale: float, paper: float, seed: int) -> Imag
         patch = Image.new("RGB", image.size, colour)
         page = Image.composite(patch, page, mask)
     return _on(page, paper_texture(image.size, seed + 163, paper * 0.35))
+
+
+def _sumi(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Layer ink washes with occasional directional dark-brush touches."""
+
+    shade = ImageOps.invert(ImageOps.grayscale(image))
+    broad = shade.filter(ImageFilter.GaussianBlur(max(0.8, 2.2 * scale)))
+    stepped = broad.point(lambda v: min(255, (v // 34) * 34 + v // 7))
+    washes = Image.blend(broad, stepped, 0.40)
+    marks = Image.new("L", image.size, 0)
+    brush = ImageDraw.Draw(marks)
+    pitch = max(6, round(16 * scale))
+    length = max(3, round(13 * scale))
+    for y in range(0, image.height, pitch):
+        for x in range(0, image.width, pitch):
+            key = ((x + 1) * 73856093 ^ (y + 1) * 19349663 ^ (seed + 173) * 83492791) & 0xFFFFFFFF
+            px = min(image.width - 1, x + (key >> 8) % min(pitch, image.width - x))
+            py = min(image.height - 1, y + (key >> 16) % min(pitch, image.height - y))
+            weight = cast(int, shade.getpixel((px, py)))
+            if weight < 95 or (key & 7) > weight // 34:
+                continue
+            brush.line(
+                (px, py, min(image.width - 1, px + length), max(0, py - length // 3)),
+                fill=min(255, 188 + weight // 5 + ((key >> 19) & 31)),
+                width=max(1, round(2.0 * scale)),
+            )
+    ink = ImageChops.lighter(washes, marks)
+    if line > 0:
+        edges = ImageChops.lighter(
+            outlines(id_mask, image.size, line), value_edges(image, line, 48)
+        )
+        ink = ImageChops.lighter(ink, edges.point(lambda value: value * 3 // 4))
+    page = Image.new("RGB", image.size, (249, 247, 239))
+    pigment = Image.new("RGB", image.size, (25, 27, 29))
+    return _on(
+        Image.composite(pigment, page, ink),
+        paper_texture(image.size, seed + 179, paper * 0.65),
+    )
+
+
+def _stainedglass(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Enclose palette-limited illuminated panes in dark, solid leading."""
+
+    palette_image = image.quantize(
+        colors=10, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+    )
+    # Preserve palette *indices*. Converting P to L would turn them into
+    # brightness values and could erase boundaries between different hues.
+    indices = Image.frombytes("L", image.size, palette_image.tobytes())
+    neighbourhood = indices.filter(ImageFilter.MaxFilter(3))
+    opposite = indices.filter(ImageFilter.MinFilter(3))
+    boundaries = ImageChops.difference(neighbourhood, opposite)
+    boundaries = boundaries.point(lambda value: 255 if value else 0)
+    if line > 0:
+        boundaries = ImageChops.lighter(boundaries, outlines(id_mask, image.size, line))
+    panes = ImageEnhance.Color(palette_image.convert("RGB")).enhance(1.3)
+    panes = ImageEnhance.Brightness(panes).enhance(1.08)
+    # No wraparound at image borders; thick leading remains a distinct layer.
+    lead = boundaries.filter(ImageFilter.MaxFilter(3))
+    glass = Image.composite(Image.new("RGB", image.size, (30, 32, 38)), panes, lead)
+    return _on(glass, paper_texture(image.size, seed + 181, paper * 0.12))
+
+
+def _cyanotype(
+    image: Image.Image,
+    id_mask: Image.Image | None,
+    line: float,
+    scale: float,
+    paper: float,
+    seed: int,
+) -> Image.Image:
+    """Photographic blue values with pale contours like contact-print edges."""
+
+    exposure = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(max(0.35, 0.75 * scale)))
+    if line > 0:
+        contours = outlines(id_mask, image.size, line)
+        exposure = ImageChops.add(exposure, contours.point(lambda value: value // 5))
+    blue = ImageOps.colorize(
+        exposure,
+        black=(11, 40, 98),
+        white=(230, 244, 240),
+        mid=(65, 123, 177),
+    )
+    return _on(blue, paper_texture(image.size, seed + 191, paper * 0.55))
 
 
 def _on(image: Image.Image, texture: Image.Image) -> Image.Image:
