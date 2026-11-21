@@ -46,6 +46,34 @@ def test_outlines_follow_the_id_mask() -> None:
     assert outlines(None, (80, 60), 1.0).getbbox() is None
 
 
+def test_outlines_do_not_wrap_across_opposite_image_borders() -> None:
+    mask = Image.new("RGBA", (24, 16), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle((23, 5, 23, 11), fill=(0, 0, 1, 255))
+    lines = outlines(mask, mask.size, 1.0)
+    assert lines.getpixel((23, 8)) > 128
+    assert lines.getpixel((0, 8)) == 0
+
+    mask = Image.new("RGBA", (24, 16), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(mask)
+    draw.rectangle((5, 15, 12, 15), fill=(0, 0, 1, 255))
+    lines = outlines(mask, mask.size, 1.0)
+    assert lines.getpixel((8, 15)) > 128
+    assert lines.getpixel((8, 0)) == 0
+
+
+@pytest.mark.parametrize("preset", [p for p in PRESETS if p != "none"])
+@pytest.mark.parametrize("strength", [0.5, 1.0])
+def test_style_preserves_transparent_background(preset: str, strength: float) -> None:
+    source = _render().convert("RGBA")
+    source.putalpha(Image.new("L", source.size, 0))
+    source.putpixel((10, 10), (30, 80, 150, 128))
+    source.putpixel((30, 20), (90, 40, 20, 255))
+    painted = apply_style(source, synthetic_mask(), {"preset": preset, "strength": strength})
+    assert painted.mode == "RGBA"
+    assert painted.getchannel("A").tobytes() == source.getchannel("A").tobytes()
+
+
 def test_ink_draws_dark_lines_on_edges() -> None:
     styled = apply_style(_render(), synthetic_mask(), {"preset": "ink", "paper": 0.0})
     x0, y0, _, y1 = VASE_BOX
